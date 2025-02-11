@@ -8,34 +8,57 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  firstName String
-  lastName  String
-  email     String   @unique
-  password  String
-  phone     String?  // Optional
-  address   String?  // Optional
-  role      String   // 'student', 'teacher', 'admin'
-  student   Student?
-  teacher   Teacher?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           Int      @id @default(autoincrement())
+  firstName    String
+  lastName     String
+  email        String   @unique
+  password     String
+  phone        String?  // Optional
+  address      String?  // Optional
+  role         String   // 'student', 'teacher', 'admin'
+  lrn          Int?     @unique  // Optional, for students only
+  gradeLevel   Int?     // Optional, for students only
+  section      String?  // Optional, for students only
+  domain       String?  // Optional, for teachers only
+  department   String?  // Optional, for teachers only
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+   examAnswers  ExamAnswer[] // Relation to ExamAnswer
+}
+model Question {
+  id            Int      @id @default(autoincrement())
+  examId        Int
+  questionText  String
+  questionType  String
+  options       Json     // Use Json type to store an array of options
+  correctAnswer String
+  exam          Exam     @relation(fields: [examId], references: [id])
+  examAnswers   ExamAnswer[] // Add this line to define the opposite relation
 }
 
-model Student {
-  id         Int      @id @default(autoincrement())
-  lrn        String   @unique
-  userId     Int      @unique
-  gradeLevel Int      // 7-10
-  section    String?  // Optional
-  user       User     @relation(fields: [userId], references: [id])
+model Exam {
+  id            Int           @id @default(autoincrement())
+  testCode      String        @unique
+  classCode     String
+  examTitle     String
+  questions     Question[]    // Questions in the exam
+  examAnswers   ExamAnswer[]  // Add this line to define the opposite relation
 }
 
-model Teacher {
-  id        Int      @id @default(autoincrement())
-  domain    String   @unique
-  userId    Int      @unique  // Ensure one-to-one relation
-  department String?
-  subject    String?
-  user      User     @relation(fields: [userId], references: [id])
+model ExamAnswer {
+  id           Int      @id @default(autoincrement())
+  examId       Int
+  questionId   Int
+  userAnswer   String
+  isCorrect    Boolean
+  submittedAt  DateTime @default(now())
+   userId       Int // Add the userId field here
+   user         User     @relation(fields: [userId], references: [id]) // Add relation to User model
+  exam         Exam     @relation(fields: [examId], references: [id])
+  question     Question @relation(fields: [questionId], references: [id])
+   @@unique([examId, userId, questionId])  // Composite unique key
 }
+
+
+
+

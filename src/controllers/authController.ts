@@ -1,0 +1,128 @@
+import {  Request,Response } from 'express';
+import { AuthRequest } from '@/middleware/authRequest';
+import { fetchExamQuestions,answerExam,createExam,registerAdmin, registerStudent, registerTeacher, loginUser, fetchProfile, updateUserProfile,} from '../utils/authUtils';
+
+// Register a new student
+const handleRegisterStudent = async (req: AuthRequest, res: Response) => {
+  const { email, password, firstName, lastName, address, lrn, gradeLevel, section } = req.body;
+  try {
+    const user = await registerStudent(email, password, firstName, lastName, address, lrn, gradeLevel, section);
+    res.status(201).json({ message: 'Student registered successfully.', user });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+// Register a new teacher
+const handleRegisterTeacher = async (req: AuthRequest, res: Response) => {
+  const { email, password, firstName, lastName, address, domain, department } = req.body;
+  try {
+    const user = await registerTeacher(email, password, firstName, lastName, address, domain, department);
+    res.status(201).json({ message: 'Teacher registered successfully.', user });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+// Register a new admin
+const handleRegisterAdmin = async (req: AuthRequest, res: Response) => {
+  const { email, password, firstName, lastName, address, } = req.body;
+  try {
+    const user = await registerAdmin(email, password, firstName, lastName, address);
+    res.status(201).json({ message: 'Admin registered successfully.', user });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+// Login a user
+const handleLogin = async (req: AuthRequest, res: Response) => {
+  const { email, lrn, password } = req.body; // Expecting email or lrn to be passed separately
+  try {
+    const token = await loginUser(email, lrn, password);
+    res.status(200).json({ message: 'Login successful', token });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+
+
+// Fetch a user's profile
+const handleGetProfile = async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  try {
+    const userProfile = await fetchProfile(userId);
+    res.status(200).json({ message: 'Profile fetched successfully', userProfile });
+  } catch (error) {
+    res.status(404).json({ error: (error as Error).message });
+  }
+};
+
+// Update a user's profile
+const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const { firstName, lastName,  role, lrn, gradeLevel, section, domain, department } = req.body;
+  try {
+    const updatedUser = await updateUserProfile(userId, firstName, lastName,  role, lrn, gradeLevel, section, domain, department);
+    res.status(200).json({ message: 'Profile updated successfully', updatedUser });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+// Create a new exam
+const handleCreateExam = async (req: AuthRequest, res: Response) => {
+  const { testCode, classCode, examTitle, questions } = req.body;
+  
+  try {
+    const exam = await createExam(testCode, classCode, examTitle, questions);
+    res.status(201).json({ message: 'Exam created successfully.', exam });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+interface AnswerExamRequest {
+  testCode: string; // Now using testCode instead of examId
+  userId: number;
+  answers: Array<{ questionId: number; userAnswer: string }>;
+}
+
+const handleAnswerExam = async (req: Request, res: Response) => {
+  const body: AnswerExamRequest = req.body; // Explicitly type req.body
+  console.log("Received answer exam request");
+  const { testCode, userId, answers } = body;
+
+  try {
+    const answeredQuestions = await answerExam(testCode, userId, answers); // Passing testCode instead of examId
+    res.status(200).json({
+      message: 'Answers submitted successfully',
+      answeredQuestions, // Returning the questions with answers and correctness information
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+interface FetchExamQuestionsRequest {
+  testCode: string; // Accepting testCode to identify the exam
+}
+
+const handleFetchExamQuestions = async (req: Request, res: Response) => {
+  const body: FetchExamQuestionsRequest = req.body; // Explicitly type req.body
+  console.log("Received fetch exam questions request");
+  const { testCode } = body;
+
+  try {
+    const questions = await fetchExamQuestions(testCode); // Fetch questions by testCode
+    res.status(200).json({
+      message: 'Exam questions fetched successfully',
+      questions, // Returning the questions with necessary details
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+
+export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin, handleGetProfile, handleUpdateProfile,handleCreateExam,handleAnswerExam
+  ,handleFetchExamQuestions
+};
