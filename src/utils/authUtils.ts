@@ -225,11 +225,11 @@ const createExam = async (
 };
 
 const answerExam = async ( 
-  testCode: string, // Accepting testCode instead of examId
-  userId: number, // Assuming you are keeping track of users
+  testCode: string, 
+  userId: number, 
   answers: Array<{ questionId: number, userAnswer: string }>
 ) => {
-  // First, fetch the examId using the testCode
+  // Fetch the exam using testCode
   const exam = await prisma.exam.findUnique({
     where: { testCode },
   });
@@ -238,7 +238,12 @@ const answerExam = async (
     throw new Error('Exam not found');
   }
 
-  const examId = exam.id; // Now you have the examId from the testCode
+  // Check if the exam is marked as started
+  if (exam.status !== "started") {
+    throw new Error('Exam has not started yet.');
+  }
+
+  const examId = exam.id;
 
   // Fetch the exam questions
   const examQuestions = await prisma.question.findMany({
@@ -283,38 +288,93 @@ const answerExam = async (
     const isCorrect = correctAnswers.find(ca => ca.questionId === question.id)?.isCorrect || false;
     return {
       questionId: question.id,
-      questionText: question.questionText, // Assuming the question text is stored here
+      questionText: question.questionText,
       userAnswer,
       isCorrect,
     };
   });
 
-  return answeredQuestions; // Return questions along with answers and correctness
+  return answeredQuestions;
 };
 
-const fetchExamQuestions = async (testCode: string) => {
-  // First, fetch the examId using the testCode
+
+const fetchExamQuestions = async (testCode: string) => { 
+  // Fetch the exam details
   const exam = await prisma.exam.findUnique({
     where: { testCode },
+    select: { 
+      id: true, 
+      status: true, 
+      examTitle: true, 
+      classCode: true, 
+      testCode: true 
+    },
   });
 
   if (!exam) {
     throw new Error('Exam not found');
   }
 
-  const examId = exam.id; // Now you have the examId from the testCode
+  // If the exam is not started, return only exam details without questions
+  if (exam.status !== "started") {
+    return {
+      examTitle: exam.examTitle,
+      classCode: exam.classCode,
+      testCode: exam.testCode,
+      status: exam.status,
+      questions: null, // Indicating that questions are not available yet
+    };
+  }
 
-  // Fetch the exam questions
+  // Fetch the exam questions if the exam has started
   const examQuestions = await prisma.question.findMany({
-    where: { examId },
+    where: { examId: exam.id },
+    select: {
+      id: true,
+      questionText: true,
+      questionType: true,
+      options: true, // Includes options if stored as JSON
+    }
   });
 
-  // Return the questions with the necessary details (e.g., question text)
-  return examQuestions.map(question => ({
-    questionId: question.id,
-    questionText: question.questionText, // Assuming the question text is stored here
-  }));
+  return {
+    examTitle: exam.examTitle,
+    classCode: exam.classCode,
+    testCode: exam.testCode,
+    status: exam.status,
+    questions: examQuestions.map(question => ({
+      questionId: question.id,
+      questionText: question.questionText,
+      questionType: question.questionType,
+      options: question.options, // Sending options if applicable
+    })),
+  };
 };
 
 
-export { registerAdmin, registerStudent, registerTeacher, loginUser, fetchProfile, updateUserProfile, prisma,QuestionType,createExam ,answerExam, fetchExamQuestions};
+
+const startExam = async (testCode: string) => {
+  const exam = await prisma.exam.update({
+    where: { testCode },
+    data: { status: "started" },
+  });
+
+  return exam;
+};
+
+// Function to stop the exam
+const stopExam = async (testCode: string) => { 
+  const exam = await prisma.exam.update({
+    where: { testCode },
+    data: { status: "stopped" }, // Assuming "stopped" is the status for a stopped exam
+  });
+
+  return exam;
+};
+export { registerAdmin, registerStudent, 
+  registerTeacher, loginUser, fetchProfile, 
+  updateUserProfile, prisma,QuestionType,
+  createExam ,answerExam, fetchExamQuestions,
+  startExam, stopExam
+
+};

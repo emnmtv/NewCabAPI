@@ -41,9 +41,11 @@ model Exam {
   testCode      String        @unique
   classCode     String
   examTitle     String
-  questions     Question[]    // Questions in the exam
-  examAnswers   ExamAnswer[]  // Add this line to define the opposite relation
+  status        String        @default("pending") // Add status: "pending" or "started"
+  questions     Question[]    
+  examAnswers   ExamAnswer[]  
 }
+
 
 model ExamAnswer {
   id           Int      @id @default(autoincrement())

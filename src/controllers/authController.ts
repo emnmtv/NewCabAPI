@@ -1,6 +1,11 @@
 import {  Request,Response } from 'express';
 import { AuthRequest } from '@/middleware/authRequest';
-import { fetchExamQuestions,answerExam,createExam,registerAdmin, registerStudent, registerTeacher, loginUser, fetchProfile, updateUserProfile,} from '../utils/authUtils';
+import { fetchExamQuestions,answerExam,
+  createExam,registerAdmin, registerStudent, registerTeacher, 
+  loginUser, fetchProfile, updateUserProfile,startExam,
+  stopExam
+
+} from '../utils/authUtils';
 
 // Register a new student
 const handleRegisterStudent = async (req: AuthRequest, res: Response) => {
@@ -102,27 +107,57 @@ const handleAnswerExam = async (req: Request, res: Response) => {
     res.status(500).json({ error: (error as Error).message });
   }
 };
+
 interface FetchExamQuestionsRequest {
   testCode: string; // Accepting testCode to identify the exam
 }
 
 const handleFetchExamQuestions = async (req: Request, res: Response) => {
-  const body: FetchExamQuestionsRequest = req.body; // Explicitly type req.body
-  console.log("Received fetch exam questions request");
+  const body: FetchExamQuestionsRequest = req.body;
+  console.log("Received fetch exam questions request:", body);
   const { testCode } = body;
 
   try {
-    const questions = await fetchExamQuestions(testCode); // Fetch questions by testCode
+    const examData = await fetchExamQuestions(testCode);
     res.status(200).json({
       message: 'Exam questions fetched successfully',
-      questions, // Returning the questions with necessary details
+      exam: {
+        examTitle: examData.examTitle,
+        classCode: examData.classCode,
+        testCode: examData.testCode,
+        questions: examData.questions,
+      },
     });
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    res.status(400).json({ error: (error as Error).message });
   }
 };
 
 
+
+
+const handleStartExam = async (req: Request, res: Response) => {
+  const { testCode } = req.body;
+
+  try {
+    const exam = await startExam(testCode);
+    res.status(200).json({ message: 'Exam started successfully', exam });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+// Handler function for stopping the exam
+const handleStopExam = async (req: Request, res: Response) => {
+  const { testCode } = req.body;
+
+  try {
+    const exam = await stopExam(testCode);
+    res.status(200).json({ message: 'Exam stopped successfully', exam });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
 export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin, handleGetProfile, handleUpdateProfile,handleCreateExam,handleAnswerExam
-  ,handleFetchExamQuestions
+  ,handleFetchExamQuestions, handleStartExam,handleStopExam
 };

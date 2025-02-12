@@ -1,5 +1,14 @@
 import express from 'express';
-import { handleAnswerExam,handleGetProfile,handleLogin,handleRegisterAdmin,handleRegisterStudent,handleRegisterTeacher,handleUpdateProfile,handleCreateExam, handleFetchExamQuestions } from '../controllers/authController';
+import { handleAnswerExam,handleGetProfile,handleLogin,
+    handleRegisterAdmin,handleRegisterStudent,
+    handleRegisterTeacher,
+    handleUpdateProfile,
+    handleCreateExam, 
+    handleFetchExamQuestions,
+    handleStartExam,
+    handleStopExam,
+
+} from '../controllers/authController';
 import { authenticateToken } from '../middleware/authMiddleware';
 
 const authRouter = express.Router();
@@ -12,6 +21,8 @@ authRouter.post('/login',handleLogin );
 authRouter.post('/exam',handleCreateExam);
 authRouter.post('/answer',handleAnswerExam);
 authRouter.post('/question',handleFetchExamQuestions);
+authRouter.post('/startexam',handleStartExam);
+authRouter.post('/stopexam',handleStopExam);
 
 // Protected routes
 authRouter.get('/profile', authenticateToken, handleGetProfile);
