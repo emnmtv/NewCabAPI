@@ -126,7 +126,13 @@ const loginUser = async (email: string | undefined, lrn: number | undefined, pas
   }
 
   const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '1h' });
-  return token;
+  
+  // Return both token and user role
+  return {
+    token,
+    role: user.role,
+    userId: user.id
+  };
 };
 
 // Fetch a user's profile
