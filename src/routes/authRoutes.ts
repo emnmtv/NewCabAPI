@@ -1,5 +1,5 @@
 import express from 'express';
-import { handleAnswerExam,handleGetProfile,handleLogin,
+import { handleAnswerExam,handleLogin,
     handleRegisterAdmin,handleRegisterStudent,
     handleRegisterTeacher,
     handleUpdateProfile,
@@ -7,7 +7,7 @@ import { handleAnswerExam,handleGetProfile,handleLogin,
     handleFetchExamQuestions,
     handleStartExam,
     handleStopExam,
-
+    handleGetUserProfile,
 } from '../controllers/authController';
 import { authenticateToken } from '../middleware/authMiddleware';
 
@@ -18,14 +18,14 @@ authRouter.post('/register-admin', handleRegisterAdmin);
 authRouter.post('/register-student', handleRegisterStudent );
 authRouter.post('/register-teacher', handleRegisterTeacher);
 authRouter.post('/login',handleLogin );
-authRouter.post('/exam',handleCreateExam);
+authRouter.post('/exam',authenticateToken,handleCreateExam);
 authRouter.post('/answer',handleAnswerExam);
 authRouter.post('/question',handleFetchExamQuestions);
 authRouter.post('/startexam',handleStartExam);
 authRouter.post('/stopexam',handleStopExam);
 
-// Protected routes
-authRouter.get('/profile', authenticateToken, handleGetProfile);
+
 authRouter.put('/profile', authenticateToken, handleUpdateProfile);
+authRouter.get('/user-profile', authenticateToken, handleGetUserProfile);
 
 export { authRouter };

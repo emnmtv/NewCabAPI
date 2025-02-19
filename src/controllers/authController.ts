@@ -2,9 +2,8 @@ import {  Request,Response } from 'express';
 import { AuthRequest } from '@/middleware/authRequest';
 import { fetchExamQuestions,answerExam,
   createExam,registerAdmin, registerStudent, registerTeacher, 
-  loginUser, fetchProfile, updateUserProfile,startExam,
-  stopExam
-
+  loginUser,  updateUserProfile,startExam,
+  stopExam, fetchUserProfile
 } from '../utils/authUtils';
 
 // Register a new student
@@ -42,10 +41,13 @@ const handleRegisterAdmin = async (req: AuthRequest, res: Response) => {
 
 // Login a user
 const handleLogin = async (req: AuthRequest, res: Response) => {
-  const { email, lrn, password } = req.body; // Expecting email or lrn to be passed separately
+  const { email, lrn, password } = req.body;
   try {
-    const token = await loginUser(email, lrn, password);
-    res.status(200).json({ message: 'Login successful', token });
+    const { token } = await loginUser(email, lrn, password);
+    res.status(200).json({ 
+      message: 'Login successful', 
+      token 
+    });
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
   }
@@ -53,23 +55,23 @@ const handleLogin = async (req: AuthRequest, res: Response) => {
 
 
 
-// Fetch a user's profile
-const handleGetProfile = async (req: AuthRequest, res: Response) => {
-  const userId = req.user!.userId;
-  try {
-    const userProfile = await fetchProfile(userId);
-    res.status(200).json({ message: 'Profile fetched successfully', userProfile });
-  } catch (error) {
-    res.status(404).json({ error: (error as Error).message });
-  }
-};
 
 // Update a user's profile
 const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
-  const { firstName, lastName,  role, lrn, gradeLevel, section, domain, department } = req.body;
+  const { firstName, lastName, email, address, gradeLevel, section, domain, department } = req.body;
   try {
-    const updatedUser = await updateUserProfile(userId, firstName, lastName,  role, lrn, gradeLevel, section, domain, department);
+    const updatedUser = await updateUserProfile(
+      userId, 
+      firstName, 
+      lastName, 
+      email,
+      address,
+      gradeLevel,
+      section,
+      domain,
+      department
+    );
     res.status(200).json({ message: 'Profile updated successfully', updatedUser });
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
@@ -78,9 +80,10 @@ const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
 // Create a new exam
 const handleCreateExam = async (req: AuthRequest, res: Response) => {
   const { testCode, classCode, examTitle, questions } = req.body;
+  const userId = req.user!.userId; // Get userId from the request
   
   try {
-    const exam = await createExam(testCode, classCode, examTitle, questions);
+    const exam = await createExam(testCode, classCode, examTitle, questions, userId); // Pass userId
     res.status(201).json({ message: 'Exam created successfully.', exam });
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
@@ -158,6 +161,17 @@ const handleStopExam = async (req: Request, res: Response) => {
     res.status(400).json({ error: (error as Error).message });
   }
 };
-export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin, handleGetProfile, handleUpdateProfile,handleCreateExam,handleAnswerExam
-  ,handleFetchExamQuestions, handleStartExam,handleStopExam
+
+const handleGetUserProfile = async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  try {
+    const userProfile = await fetchUserProfile(userId);
+    res.status(200).json({ userProfile });
+  } catch (error) {
+    res.status(404).json({ error: (error as Error).message });
+  }
+};
+
+export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin,  handleUpdateProfile,handleCreateExam,handleAnswerExam
+  ,handleFetchExamQuestions, handleStartExam,handleStopExam, handleGetUserProfile
 };

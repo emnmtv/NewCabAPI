@@ -1,7 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = 'your_jwt_secret'; // Replace with your actual secret
+// Use the same secret as in authUtils
+const JWT_SECRET = 'fallback_secret';
 
 const authenticateToken = (
   req: Request,

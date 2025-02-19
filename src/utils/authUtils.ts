@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';  // Store secret in an environment variable for production security
+const JWT_SECRET = 'fallback_secret';  // Make sure this matches the one in authMiddleware.ts
 
 // Helper function to return default values for optional fields
 const getOrDefault = (value: any, defaultValue: any = "") => value || defaultValue;
@@ -125,53 +125,27 @@ const loginUser = async (email: string | undefined, lrn: number | undefined, pas
     throw new Error('Invalid password');
   }
 
-  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '1h' });
+  // Include role in the JWT token payload with 2 hour expiration
+  const token = jwt.sign(
+    { 
+      userId: user.id,
+      role: user.role,
+      exp: Math.floor(Date.now() / 1000) + (2 * 60 * 60) // 2 hours expiration
+    }, 
+    JWT_SECRET
+  );
   
-  // Return both token and user role
-  return {
-    token,
-    role: user.role,
-    userId: user.id
-  };
+  return { token };
 };
 
-// Fetch a user's profile
-const fetchProfile = async (userId: number) => {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      id: true,
-      email: true,
-      firstName: true,
-      lastName: true,
-      
-      address: true,
-      role: true,
-      lrn: true,
-      gradeLevel: true,
-      section: true,
-      domain: true,
-      department: true,
-      
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
-
-  if (!user) {
-    throw new Error('User not found');
-  }
-
-  return user;
-};
 
 // Update a user's profile
 const updateUserProfile = async (
   userId: number,
   firstName?: string,
   lastName?: string,
+  email?: string,
   address?: string,
-  lrn?: string,
   gradeLevel?: number,
   section?: string,
   domain?: string,
@@ -179,22 +153,19 @@ const updateUserProfile = async (
 ) => {
   const updatedData: any = {};
 
-  // Only update the fields that are provided
   if (firstName) updatedData.firstName = firstName;
   if (lastName) updatedData.lastName = lastName;
+  if (email) updatedData.email = email;
   if (address) updatedData.address = address;
-  if (lrn) updatedData.lrn = lrn;
   if (gradeLevel) updatedData.gradeLevel = gradeLevel;
   if (section) updatedData.section = section;
   if (domain) updatedData.domain = domain;
   if (department) updatedData.department = department;
 
-  const updatedUser = await prisma.user.update({
+  return await prisma.user.update({
     where: { id: userId },
     data: updatedData,
   });
-
-  return updatedUser;
 };
 // Exam question type enumeration
 enum QuestionType {
@@ -208,7 +179,8 @@ const createExam = async (
   testCode: string,
   classCode: string,
   examTitle: string,
-  questions: Array<{ questionText: string, questionType: QuestionType, options?: string[], correctAnswer: string }>
+  questions: Array<{ questionText: string, questionType: QuestionType, options?: string[], correctAnswer: string }>,
+  userId: number
 ) => {
   // Create exam record
   const exam = await prisma.exam.create({
@@ -216,11 +188,12 @@ const createExam = async (
       testCode,
       classCode,
       examTitle,
+      userId,
       questions: {
         create: questions.map(question => ({
           questionText: question.questionText,
           questionType: question.questionType,
-          options: question.options || [],
+          options: question.questionType === 'enumeration' ? [] : (question.options || []),
           correctAnswer: question.correctAnswer,
         })),
       },
@@ -377,10 +350,39 @@ const stopExam = async (testCode: string) => {
 
   return exam;
 };
+
+// Add this new function
+const fetchUserProfile = async (userId: number) => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      address: true,
+      role: true,
+      lrn: true,
+      gradeLevel: true,
+      section: true,
+      domain: true,
+      department: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  return user;
+};
+
 export { registerAdmin, registerStudent, 
-  registerTeacher, loginUser, fetchProfile, 
+  registerTeacher, loginUser,  
   updateUserProfile, prisma,QuestionType,
   createExam ,answerExam, fetchExamQuestions,
-  startExam, stopExam
+  startExam, stopExam, fetchUserProfile
 
 };
