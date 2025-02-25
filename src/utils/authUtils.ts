@@ -205,7 +205,7 @@ const createExam = async (
 
 const answerExam = async ( 
   testCode: string, 
-  userId: number, 
+  userId: number,
   answers: Array<{ questionId: number, userAnswer: string }>
 ) => {
   // Fetch the exam using testCode
@@ -377,6 +377,11 @@ const fetchUserProfile = async (userId: number) => {
   }
 
   return user;
+};
+
+// Remove this function if not needed
+export const joinExam = (/* socketId: string, testCode: string */) => {
+  // Logic to handle joining the exam can be added here if needed
 };
 
 export { registerAdmin, registerStudent, 

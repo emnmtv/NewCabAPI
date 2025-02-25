@@ -1,4 +1,4 @@
-import {  Request,Response } from 'express';
+import { Response } from 'express';
 import { AuthRequest } from '@/middleware/authRequest';
 import { fetchExamQuestions,answerExam,
   createExam,registerAdmin, registerStudent, registerTeacher, 
@@ -9,10 +9,13 @@ import { fetchExamQuestions,answerExam,
 // Register a new student
 const handleRegisterStudent = async (req: AuthRequest, res: Response) => {
   const { email, password, firstName, lastName, address, lrn, gradeLevel, section } = req.body;
+  console.log('Received registration request for student:', { email, firstName, lastName });
+
   try {
     const user = await registerStudent(email, password, firstName, lastName, address, lrn, gradeLevel, section);
     res.status(201).json({ message: 'Student registered successfully.', user });
   } catch (error) {
+    console.error('Registration error:', error);
     res.status(400).json({ error: (error as Error).message });
   }
 };
@@ -53,9 +56,6 @@ const handleLogin = async (req: AuthRequest, res: Response) => {
   }
 };
 
-
-
-
 // Update a user's profile
 const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
@@ -77,6 +77,7 @@ const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
     res.status(400).json({ error: (error as Error).message });
   }
 };
+
 // Create a new exam
 const handleCreateExam = async (req: AuthRequest, res: Response) => {
   const { testCode, classCode, examTitle, questions } = req.body;
@@ -89,19 +90,22 @@ const handleCreateExam = async (req: AuthRequest, res: Response) => {
     res.status(400).json({ error: (error as Error).message });
   }
 };
+
 interface AnswerExamRequest {
   testCode: string; // Now using testCode instead of examId
   userId: number;
   answers: Array<{ questionId: number; userAnswer: string }>;
 }
 
-const handleAnswerExam = async (req: Request, res: Response) => {
+// Answer exam
+const handleAnswerExam = async (req: AuthRequest, res: Response) => {
   const body: AnswerExamRequest = req.body; // Explicitly type req.body
+  const userId = req.user!.userId; // Extract userId from the request
   console.log("Received answer exam request");
-  const { testCode, userId, answers } = body;
+  const { testCode, answers } = body;
 
   try {
-    const answeredQuestions = await answerExam(testCode, userId, answers); // Passing testCode instead of examId
+    const answeredQuestions = await answerExam(testCode, userId, answers); // Pass userId
     res.status(200).json({
       message: 'Answers submitted successfully',
       answeredQuestions, // Returning the questions with answers and correctness information
@@ -115,7 +119,7 @@ interface FetchExamQuestionsRequest {
   testCode: string; // Accepting testCode to identify the exam
 }
 
-const handleFetchExamQuestions = async (req: Request, res: Response) => {
+const handleFetchExamQuestions = async (req: AuthRequest, res: Response) => {
   const body: FetchExamQuestionsRequest = req.body;
   console.log("Received fetch exam questions request:", body);
   const { testCode } = body;
@@ -136,10 +140,7 @@ const handleFetchExamQuestions = async (req: Request, res: Response) => {
   }
 };
 
-
-
-
-const handleStartExam = async (req: Request, res: Response) => {
+const handleStartExam = async (req: AuthRequest, res: Response) => {
   const { testCode } = req.body;
 
   try {
@@ -151,7 +152,7 @@ const handleStartExam = async (req: Request, res: Response) => {
 };
 
 // Handler function for stopping the exam
-const handleStopExam = async (req: Request, res: Response) => {
+const handleStopExam = async (req: AuthRequest, res: Response) => {
   const { testCode } = req.body;
 
   try {
