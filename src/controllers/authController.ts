@@ -3,7 +3,11 @@ import { AuthRequest } from '@/middleware/authRequest';
 import { fetchExamQuestions,answerExam,
   createExam,registerAdmin, registerStudent, registerTeacher, 
   loginUser,  updateUserProfile,startExam,
-  stopExam, fetchUserProfile
+  stopExam, fetchUserProfile,
+  fetchStudentList,
+  fetchTeacherList,
+  fetchAdminList,
+  fetchStudentScores
 } from '../utils/authUtils';
 
 // Register a new student
@@ -99,16 +103,17 @@ interface AnswerExamRequest {
 
 // Answer exam
 const handleAnswerExam = async (req: AuthRequest, res: Response) => {
-  const body: AnswerExamRequest = req.body; // Explicitly type req.body
-  const userId = req.user!.userId; // Extract userId from the request
+  const body: AnswerExamRequest = req.body;
+  const userId = req.user!.userId;
   console.log("Received answer exam request");
   const { testCode, answers } = body;
 
   try {
-    const answeredQuestions = await answerExam(testCode, userId, answers); // Pass userId
+    const result = await answerExam(testCode, userId, answers);
     res.status(200).json({
       message: 'Answers submitted successfully',
-      answeredQuestions, // Returning the questions with answers and correctness information
+      answeredQuestions: result.answeredQuestions,
+      score: result.score
     });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
@@ -132,6 +137,7 @@ const handleFetchExamQuestions = async (req: AuthRequest, res: Response) => {
         examTitle: examData.examTitle,
         classCode: examData.classCode,
         testCode: examData.testCode,
+        status: examData.status,  // Explicitly include status in the response
         questions: examData.questions,
       },
     });
@@ -173,6 +179,63 @@ const handleGetUserProfile = async (req: AuthRequest, res: Response) => {
   }
 };
 
+/**
+ * Handler to fetch all students
+ */
+const handleGetStudents = async (_req: AuthRequest, res: Response) => {
+  try {
+    const students = await fetchStudentList();
+    res.status(200).json({ students });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to fetch all teachers
+ */
+const handleGetTeachers = async (_req: AuthRequest, res: Response) => {
+  try {
+    const teachers = await fetchTeacherList();
+    res.status(200).json({ teachers });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to fetch all admins
+ */
+const handleGetAdmins = async (_req: AuthRequest, res: Response) => {
+  try {
+    const admins = await fetchAdminList();
+    res.status(200).json({ admins });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to fetch student scores
+ * Optional query params: studentId, examId
+ */
+const handleGetStudentScores = async (req: AuthRequest, res: Response) => {
+  try {
+    const studentId = req.query.studentId ? parseInt(req.query.studentId as string) : undefined;
+    const examId = req.query.examId ? parseInt(req.query.examId as string) : undefined;
+    
+    const scores = await fetchStudentScores(studentId, examId);
+    res.status(200).json({ scores });
+  } catch (error) {
+    console.error('Error fetching student scores:', error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
 export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin,  handleUpdateProfile,handleCreateExam,handleAnswerExam
-  ,handleFetchExamQuestions, handleStartExam,handleStopExam, handleGetUserProfile
+  ,handleFetchExamQuestions, handleStartExam,handleStopExam, handleGetUserProfile,
+  handleGetStudents,
+  handleGetTeachers,
+  handleGetAdmins,
+  handleGetStudentScores
 };

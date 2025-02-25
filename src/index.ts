@@ -32,7 +32,8 @@ app.use(express.json());
 app.use('/auth', authRouter);
 
 // WebSocket connection
-const studentsInExam = new Map(); // Use a Map to store userId and socketId
+const studentsInExam = new Map(); // Map to track students by exam code
+const socketToExam = new Map(); // Map to track which exam a socket is in
 
 io.on('connection', (socket: Socket) => {
   console.log('A user connected:', socket.id);
@@ -54,36 +55,75 @@ io.on('connection', (socket: Socket) => {
       return;
     }
 
-    const userName = `${user.firstName} ${user.lastName}`; // Combine first and last name
-
-    // Update or add the user in the studentsInExam map
-    studentsInExam.set(socket.id, { userId, userName }); // Store userId and userName with socketId
+    const userName = `${user.firstName} ${user.lastName}`;
+    
+    // Track which exam this socket is in
+    socketToExam.set(socket.id, testCode);
+    
+    // Initialize the exam's student list if it doesn't exist
+    if (!studentsInExam.has(testCode)) {
+      studentsInExam.set(testCode, new Map());
+    }
+    
+    // Add the student to the exam
+    studentsInExam.get(testCode).set(socket.id, { userId, userName });
+    
+    // Join the socket room
     socket.join(testCode);
     
-    // Emit the updated list of students to all clients in the room
-    const currentStudents = Array.from(studentsInExam.values());
-    io.to(testCode).emit('studentJoined', currentStudents);
-    console.log(`Current students in exam ${testCode}:`, currentStudents);
+    // Get all students in this exam
+    const studentsInThisExam = Array.from(studentsInExam.get(testCode).values());
+    
+    // Emit the updated list to all clients in the room
+    io.to(testCode).emit('studentJoined', studentsInThisExam);
+    console.log(`Current students in exam ${testCode}:`, studentsInThisExam);
   });
 
   socket.on('quitExam', ({ testCode }) => {
     console.log(`User ${socket.id} quit exam with test code: ${testCode}`);
     
-    // Remove the user from the map
-    const userInfo = studentsInExam.get(socket.id);
-    if (userInfo) {
-      studentsInExam.delete(socket.id); // Remove the user from the map on disconnect
-
-      // Emit the updated list of students to all clients in the room
-      const currentStudents = Array.from(studentsInExam.values());
-      io.to(testCode).emit('studentLeft', currentStudents); // Notify others that a student left
-      console.log(`Current students in exam ${testCode}:`, currentStudents);
+    // If no test code provided, use the one associated with this socket
+    const examCode = testCode || socketToExam.get(socket.id);
+    
+    if (examCode && studentsInExam.has(examCode)) {
+      // Remove the student from the exam
+      studentsInExam.get(examCode).delete(socket.id);
+      
+      // Get updated student list
+      const studentsInThisExam = Array.from(studentsInExam.get(examCode).values());
+      
+      // Emit the updated list to all clients in the room
+      io.to(examCode).emit('studentLeft', studentsInThisExam);
+      console.log(`Current students in exam ${examCode}:`, studentsInThisExam);
+      
+      // Clean up socket-to-exam mapping
+      socketToExam.delete(socket.id);
+      
+      // Leave the room
+      socket.leave(examCode);
     }
   });
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
-    studentsInExam.delete(socket.id); // Remove the user from the map on disconnect
+    
+    // Find which exam this socket was in
+    const examCode = socketToExam.get(socket.id);
+    
+    if (examCode && studentsInExam.has(examCode)) {
+      // Remove the student from the exam
+      studentsInExam.get(examCode).delete(socket.id);
+      
+      // Get updated student list
+      const studentsInThisExam = Array.from(studentsInExam.get(examCode).values());
+      
+      // Emit the updated list to all clients in the room
+      io.to(examCode).emit('studentLeft', studentsInThisExam);
+      console.log(`Current students in exam ${examCode} after disconnect:`, studentsInThisExam);
+    }
+    
+    // Clean up socket-to-exam mapping
+    socketToExam.delete(socket.id);
   });
 });
 

@@ -203,77 +203,128 @@ const createExam = async (
   return exam;
 };
 
-const answerExam = async ( 
-  testCode: string, 
-  userId: number,
-  answers: Array<{ questionId: number, userAnswer: string }>
-) => {
-  // Fetch the exam using testCode
+/**
+ * Calculate and store the score for a user's exam
+ */
+const calculateAndStoreScore = async (userId: number, examId: number) => {
+  // Get the total number of questions in the exam
+  const examQuestions = await prisma.question.count({
+    where: {
+      examId,
+    },
+  });
+
+  // Get all the user's answers for this exam
+  const userAnswers = await prisma.examAnswer.findMany({
+    where: {
+      userId,
+      examId,
+    },
+    select: {
+      isCorrect: true,
+    },
+  });
+
+  // Count correct answers
+  const correctAnswers = userAnswers.filter(answer => answer.isCorrect).length;
+  
+  // Use the actual number of questions in the exam for the total
+  const totalQuestions = examQuestions;
+  
+  // Calculate percentage based on correct answers vs total questions in exam
+  const percentage = totalQuestions > 0 
+    ? Math.round((correctAnswers / totalQuestions) * 100 * 10) / 10 
+    : 0;
+
+  // Store or update the score
+  const score = await prisma.score.upsert({
+    where: {
+      userId_examId: {
+        userId,
+        examId,
+      },
+    },
+    update: {
+      score: correctAnswers,
+      total: totalQuestions,
+      percentage,
+      submittedAt: new Date(),
+    },
+    create: {
+      userId,
+      examId,
+      score: correctAnswers,
+      total: totalQuestions,
+      percentage,
+    },
+  });
+
+  console.log(`Score calculated for user ${userId}, exam ${examId}: ${correctAnswers}/${totalQuestions} (${percentage}%)`);
+  return score;
+};
+
+// Modify the answerExam function to calculate and return the score
+const answerExam = async (testCode: string, userId: number, answers: Array<{ questionId: number; userAnswer: string }>) => {
+  // First find the exam ID by testCode
   const exam = await prisma.exam.findUnique({
     where: { testCode },
+    select: { id: true }
   });
 
   if (!exam) {
     throw new Error('Exam not found');
   }
 
-  // Check if the exam is marked as started
-  if (exam.status !== "started") {
-    throw new Error('Exam has not started yet.');
-  }
+  // Process and save the answers (existing code)
+  const answeredQuestions = [];
+  
+  for (const answer of answers) {
+    // Get the correct answer for this question
+    const question = await prisma.question.findUnique({
+      where: { id: answer.questionId },
+      select: { correctAnswer: true }
+    });
 
-  const examId = exam.id;
+    if (!question) {
+      throw new Error(`Question with ID ${answer.questionId} not found`);
+    }
 
-  // Fetch the exam questions
-  const examQuestions = await prisma.question.findMany({
-    where: { examId },
-  });
+    // Determine if the answer is correct
+    const isCorrect = answer.userAnswer.toLowerCase() === question.correctAnswer.toLowerCase();
 
-  // Validate user answers and check correctness
-  const correctAnswers = examQuestions.map(question => ({
-    questionId: question.id,
-    isCorrect: question.correctAnswer === answers.find(answer => answer.questionId === question.id)?.userAnswer,
-  }));
-
-  // Save answers or update if the user has already answered
-  await Promise.all(answers.map(async (answer) => {
-    const correctAnswer = correctAnswers.find(ca => ca.questionId === answer.questionId)?.isCorrect || false;
-
-    await prisma.examAnswer.upsert({
+    // Update or create the answer in the database
+    const examAnswer = await prisma.examAnswer.upsert({
       where: {
         examId_userId_questionId: {
-          examId,
+          examId: exam.id,
           userId,
-          questionId: answer.questionId,
-        },
+          questionId: answer.questionId
+        }
       },
       update: {
         userAnswer: answer.userAnswer,
-        isCorrect: correctAnswer,
+        isCorrect
       },
       create: {
-        examId,
+        examId: exam.id,
+        userId,
         questionId: answer.questionId,
         userAnswer: answer.userAnswer,
-        isCorrect: correctAnswer,
-        userId,
-      },
+        isCorrect
+      }
     });
-  }));
 
-  // Return the answered questions with correctness info
-  const answeredQuestions = examQuestions.map(question => {
-    const userAnswer = answers.find(answer => answer.questionId === question.id)?.userAnswer || 'Not answered';
-    const isCorrect = correctAnswers.find(ca => ca.questionId === question.id)?.isCorrect || false;
-    return {
-      questionId: question.id,
-      questionText: question.questionText,
-      userAnswer,
-      isCorrect,
-    };
-  });
+    answeredQuestions.push(examAnswer);
+  }
 
-  return answeredQuestions;
+  // Calculate and store the score
+  const score = await calculateAndStoreScore(userId, exam.id);
+
+  // Return both the answered questions and the score
+  return {
+    answeredQuestions,
+    score
+  };
 };
 
 
@@ -283,7 +334,7 @@ const fetchExamQuestions = async (testCode: string) => {
     where: { testCode },
     select: { 
       id: true, 
-      status: true, 
+      status: true,  // Make sure status is selected
       examTitle: true, 
       classCode: true, 
       testCode: true 
@@ -300,7 +351,7 @@ const fetchExamQuestions = async (testCode: string) => {
       examTitle: exam.examTitle,
       classCode: exam.classCode,
       testCode: exam.testCode,
-      status: exam.status,
+      status: exam.status,  // Explicitly include status in the response
       questions: null, // Indicating that questions are not available yet
     };
   }
@@ -320,7 +371,7 @@ const fetchExamQuestions = async (testCode: string) => {
     examTitle: exam.examTitle,
     classCode: exam.classCode,
     testCode: exam.testCode,
-    status: exam.status,
+    status: exam.status,  // Explicitly include status in the response
     questions: examQuestions.map(question => ({
       questionId: question.id,
       questionText: question.questionText,
@@ -384,10 +435,142 @@ export const joinExam = (/* socketId: string, testCode: string */) => {
   // Logic to handle joining the exam can be added here if needed
 };
 
+// Add these new functions for fetching user lists
+
+/**
+ * Fetch list of all students
+ */
+const fetchStudentList = async () => {
+  const students = await prisma.user.findMany({
+    where: {
+      role: 'student'
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      lrn: true,
+      gradeLevel: true,
+      section: true,
+      createdAt: true
+    },
+    orderBy: {
+      lastName: 'asc'
+    }
+  });
+  
+  return students;
+};
+
+/**
+ * Fetch list of all teachers
+ */
+const fetchTeacherList = async () => {
+  const teachers = await prisma.user.findMany({
+    where: {
+      role: 'teacher'
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      domain: true,
+      department: true,
+      createdAt: true
+    },
+    orderBy: {
+      lastName: 'asc'
+    }
+  });
+  
+  return teachers;
+};
+
+/**
+ * Fetch list of all administrators
+ */
+const fetchAdminList = async () => {
+  const admins = await prisma.user.findMany({
+    where: {
+      role: 'admin'
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      createdAt: true
+    },
+    orderBy: {
+      lastName: 'asc'
+    }
+  });
+  
+  return admins;
+};
+
+/**
+ * Fetch student scores with student and exam details
+ * Can filter by studentId, examId, or return all scores
+ */
+const fetchStudentScores = async (studentId?: number, examId?: number) => {
+  const whereClause: any = {};
+  
+  // Add filters if provided
+  if (studentId) {
+    whereClause.userId = studentId;
+  }
+  
+  if (examId) {
+    whereClause.examId = examId;
+  }
+  
+  // Fetch scores with related student and exam information
+  const scores = await prisma.score.findMany({
+    where: whereClause,
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          lrn: true,
+          gradeLevel: true,
+          section: true,
+          email: true
+        }
+      },
+      exam: {
+        select: {
+          id: true,
+          testCode: true,
+          examTitle: true,
+          classCode: true,
+          // Remove or replace createdAt depending on your schema
+          // If createdAt doesn't exist but you have a similar field:
+          // created: true,  // If your field is named differently
+          // Or remove it entirely if no such field exists
+        }
+      }
+    },
+    orderBy: [
+      { submittedAt: 'desc' }
+    ]
+  });
+  
+  return scores;
+};
+
 export { registerAdmin, registerStudent, 
   registerTeacher, loginUser,  
   updateUserProfile, prisma,QuestionType,
   createExam ,answerExam, fetchExamQuestions,
-  startExam, stopExam, fetchUserProfile
-
+  startExam, stopExam, fetchUserProfile,
+  calculateAndStoreScore,
+  fetchStudentList,
+  fetchTeacherList,
+  fetchAdminList,
+  fetchStudentScores
 };

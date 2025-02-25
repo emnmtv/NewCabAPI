@@ -25,6 +25,7 @@ model User {
   updatedAt    DateTime @updatedAt
   examAnswers  ExamAnswer[] // Relation to ExamAnswer
   exams        Exam[] // Add this line to define the relation to Exam
+  scores       Score[]  // Add this line
 }
 
 model Question {
@@ -48,6 +49,7 @@ model Exam {
   examAnswers   ExamAnswer[]  
   userId        Int           // Add userId field to relate to User
   user          User          @relation(fields: [userId], references: [id]) // Define relation to User
+  scores        Score[]       // Add this line
 }
 
 model ExamAnswer {
@@ -62,6 +64,21 @@ model ExamAnswer {
   exam         Exam     @relation(fields: [examId], references: [id])
   question     Question @relation(fields: [questionId], references: [id])
   @@unique([examId, userId, questionId])  // Composite unique key
+}
+
+model Score {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  examId    Int
+  score     Int
+  total     Int
+  percentage Float
+  submittedAt DateTime @default(now())
+  
+  user      User     @relation(fields: [userId], references: [id])
+  exam      Exam     @relation(fields: [examId], references: [id])
+  
+  @@unique([userId, examId])
 }
 
 

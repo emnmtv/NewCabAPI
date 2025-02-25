@@ -8,6 +8,10 @@ import { handleAnswerExam,handleLogin,
     handleStartExam,
     handleStopExam,
     handleGetUserProfile,
+    handleGetStudents,
+    handleGetTeachers,
+    handleGetAdmins,
+    handleGetStudentScores
 } from '../controllers/authController';
 import { authenticateToken } from '../middleware/authMiddleware';
 
@@ -29,5 +33,9 @@ authRouter.post('/answer',authenticateToken,handleAnswerExam);
 authRouter.post('/question',authenticateToken,handleFetchExamQuestions);
 authRouter.post('/startexam',authenticateToken,handleStartExam);
 authRouter.post('/stopexam',authenticateToken,handleStopExam);
+authRouter.get('/students', authenticateToken, handleGetStudents);
+authRouter.get('/teachers', authenticateToken, handleGetTeachers);
+authRouter.get('/admins', authenticateToken, handleGetAdmins);
+authRouter.get('/scores', authenticateToken, handleGetStudentScores);
 
 export { authRouter };
