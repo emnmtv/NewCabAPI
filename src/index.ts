@@ -125,6 +125,88 @@ io.on('connection', (socket: Socket) => {
     // Clean up socket-to-exam mapping
     socketToExam.delete(socket.id);
   });
+
+  // Add this new event handler for exam progress
+  socket.on('updateExamProgress', async ({ testCode, userId, progress }) => {
+    try {
+      // Get the exam details
+      const exam = await prisma.exam.findUnique({
+        where: { testCode },
+        include: {
+          questions: true
+        }
+      });
+
+      if (!exam) return;
+
+      const totalQuestions = exam.questions.length;
+      const answeredQuestions = progress.answeredCount || 0;
+      const progressPercentage = Math.round((answeredQuestions / totalQuestions) * 100);
+
+      // Get user info
+      const user = await prisma.user.findUnique({
+        where: { id: Number(userId) },
+        select: {
+          firstName: true,
+          lastName: true,
+        }
+      });
+
+      if (!user) return;
+
+      const progressData = {
+        userId,
+        userName: `${user.firstName} ${user.lastName}`,
+        answeredQuestions,
+        totalQuestions,
+        progressPercentage,
+        currentQuestion: progress.currentQuestion
+      };
+
+      // Emit progress to all users in the exam room (especially teachers)
+      io.to(testCode).emit('examProgressUpdate', progressData);
+    } catch (error) {
+      console.error('Error updating exam progress:', error);
+    }
+  });
+
+  // Add new event for exam status changes
+  socket.on('examStatusChanged', async ({ testCode, status }) => {
+    try {
+      console.log(`Exam status change received: ${testCode} - ${status}`);
+      
+      // Get the exam details
+      const exam = await prisma.exam.findUnique({
+        where: { testCode }
+      });
+
+      if (!exam) {
+        console.log('Exam not found:', testCode);
+        return;
+      }
+
+      // Update exam status in database
+      await prisma.exam.update({
+        where: { testCode },
+        data: { status }
+      });
+
+      // Important: Make sure socket is in the room before emitting
+      socket.join(testCode);
+
+      // Emit both events to ensure delivery
+      io.to(testCode).emit('examStatusUpdate', { status });
+      if (status === 'stopped') {
+        io.to(testCode).emit('examStopped');
+        // Also broadcast to make sure all clients receive it
+        socket.broadcast.to(testCode).emit('examStopped');
+      }
+      
+      console.log(`Status update and stop signals sent to room ${testCode}`);
+    } catch (error) {
+      console.error('Error updating exam status:', error);
+    }
+  });
 });
 
 // Start the server
