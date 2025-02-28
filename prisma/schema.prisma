@@ -44,12 +44,15 @@ model Exam {
   testCode      String        @unique
   classCode     String
   examTitle     String
-  status        String        @default("pending") // Add status: "pending" or "started"
+  status        String        @default("draft") // Update default to "draft"
+  isDraft       Boolean       @default(true)    // Add this field
   questions     Question[]    
   examAnswers   ExamAnswer[]  
   userId        Int           // Add userId field to relate to User
   user          User          @relation(fields: [userId], references: [id]) // Define relation to User
   scores        Score[]       // Add this line
+  createdAt     DateTime      @default(now())   // Add this field
+  updatedAt     DateTime      @updatedAt        // Add this field
 }
 
 model ExamAnswer {

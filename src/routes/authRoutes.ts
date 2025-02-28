@@ -11,7 +11,11 @@ import { handleAnswerExam,handleLogin,
     handleGetStudents,
     handleGetTeachers,
     handleGetAdmins,
-    handleGetStudentScores
+    handleGetStudentScores,
+    handleGetTeacherExams,
+    handleUpdateExam,
+    handleDeleteExam,
+    handleGetExamAnalysis
 } from '../controllers/authController';
 import { authenticateToken } from '../middleware/authMiddleware';
 
@@ -37,5 +41,9 @@ authRouter.get('/students', authenticateToken, handleGetStudents);
 authRouter.get('/teachers', authenticateToken, handleGetTeachers);
 authRouter.get('/admins', authenticateToken, handleGetAdmins);
 authRouter.get('/scores', authenticateToken, handleGetStudentScores);
+authRouter.get('/teacher-exams', authenticateToken, handleGetTeacherExams);
+authRouter.put('/exam/:examId', authenticateToken, handleUpdateExam);
+authRouter.delete('/exam/:examId', authenticateToken, handleDeleteExam);
+authRouter.get('/exam-analysis/:examId', authenticateToken, handleGetExamAnalysis);
 
 export { authRouter };

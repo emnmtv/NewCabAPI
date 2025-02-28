@@ -7,7 +7,11 @@ import { fetchExamQuestions,answerExam,
   fetchStudentList,
   fetchTeacherList,
   fetchAdminList,
-  fetchStudentScores
+  fetchStudentScores,
+  fetchTeacherExams,
+  updateExam,
+  deleteExam,
+  getItemAnalysis
 } from '../utils/authUtils';
 
 // Register a new student
@@ -84,12 +88,22 @@ const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
 
 // Create a new exam
 const handleCreateExam = async (req: AuthRequest, res: Response) => {
-  const { testCode, classCode, examTitle, questions } = req.body;
+  const { testCode, classCode, examTitle, questions, isDraft } = req.body;
   const userId = req.user!.userId; // Get userId from the request
   
   try {
-    const exam = await createExam(testCode, classCode, examTitle, questions, userId); // Pass userId
-    res.status(201).json({ message: 'Exam created successfully.', exam });
+    const exam = await createExam(
+      testCode, 
+      classCode, 
+      examTitle, 
+      questions, 
+      userId,
+      isDraft
+    );
+    res.status(201).json({ 
+      message: isDraft ? 'Exam saved as draft.' : 'Exam created successfully.',
+      exam 
+    });
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
   }
@@ -232,10 +246,75 @@ const handleGetStudentScores = async (req: AuthRequest, res: Response) => {
   }
 };
 
+/**
+ * Handler to fetch teacher's exams
+ */
+const handleGetTeacherExams = async (req: AuthRequest, res: Response) => {
+  const teacherId = req.user!.userId;
+  
+  try {
+    const exams = await fetchTeacherExams(teacherId);
+    res.status(200).json({ exams });
+  } catch (error) {
+    console.error('Error fetching teacher exams:', error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to update an exam
+ */
+const handleUpdateExam = async (req: AuthRequest, res: Response) => {
+  const teacherId = req.user!.userId;
+  const examId = parseInt(req.params.examId);
+  const updateData = req.body;
+  
+  try {
+    const updatedExam = await updateExam(examId, teacherId, updateData);
+    res.status(200).json({ 
+      message: 'Exam updated successfully',
+      exam: updatedExam 
+    });
+  } catch (error) {
+    console.error('Error updating exam:', error);
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to delete an exam
+ */
+const handleDeleteExam = async (req: AuthRequest, res: Response) => {
+  const teacherId = req.user!.userId;
+  const examId = parseInt(req.params.examId);
+  
+  try {
+    const result = await deleteExam(examId, teacherId);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Error deleting exam:', error);
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+export const handleGetExamAnalysis = async (req: AuthRequest, res: Response) => {
+  try {
+    const examId = parseInt(req.params.examId);
+    const analysis = await getItemAnalysis(examId);
+    res.json({ analysis });
+  } catch (error) {
+    console.error('Error getting exam analysis:', error);
+    res.status(500).json({ error: 'Failed to get exam analysis' });
+  }
+};
+
 export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin,  handleUpdateProfile,handleCreateExam,handleAnswerExam
   ,handleFetchExamQuestions, handleStartExam,handleStopExam, handleGetUserProfile,
   handleGetStudents,
   handleGetTeachers,
   handleGetAdmins,
-  handleGetStudentScores
+  handleGetStudentScores,
+  handleGetTeacherExams,
+  handleUpdateExam,
+  handleDeleteExam,
 };

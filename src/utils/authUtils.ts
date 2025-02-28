@@ -179,25 +179,44 @@ const createExam = async (
   testCode: string,
   classCode: string,
   examTitle: string,
-  questions: Array<{ questionText: string, questionType: QuestionType, options?: string[], correctAnswer: string }>,
-  userId: number
+  questions: Array<{
+    questionText: string,
+    questionType: string,
+    options: any,
+    correctAnswer: string
+  }>,
+  userId: number,
+  isDraft: boolean
 ) => {
-  // Create exam record
+  // Check if testCode already exists
+  const existingExam = await prisma.exam.findUnique({
+    where: { testCode }
+  });
+
+  if (existingExam) {
+    throw new Error('Test code already exists. Please choose a different one.');
+  }
+
   const exam = await prisma.exam.create({
     data: {
       testCode,
       classCode,
       examTitle,
+      isDraft,
+      status: isDraft ? 'draft' : 'pending',
       userId,
       questions: {
-        create: questions.map(question => ({
-          questionText: question.questionText,
-          questionType: question.questionType,
-          options: question.questionType === 'enumeration' ? [] : (question.options || []),
-          correctAnswer: question.correctAnswer,
-        })),
-      },
+        create: questions.map(q => ({
+          questionText: q.questionText,
+          questionType: q.questionType,
+          options: q.options,
+          correctAnswer: q.correctAnswer
+        }))
+      }
     },
+    include: {
+      questions: true
+    }
   });
 
   return exam;
@@ -563,6 +582,222 @@ const fetchStudentScores = async (studentId?: number, examId?: number) => {
   return scores;
 };
 
+/**
+ * Fetch all exams created by a specific teacher
+ */
+const fetchTeacherExams = async (teacherId: number) => {
+  const exams = await prisma.exam.findMany({
+    where: {
+      userId: teacherId
+    },
+    include: {
+      questions: true,
+      scores: {
+        select: {
+          score: true,
+          total: true,
+          percentage: true,
+          user: {
+            select: {
+              firstName: true,
+              lastName: true
+            }
+          }
+        }
+      },
+      _count: {
+        select: {
+          examAnswers: true
+        }
+      }
+    },
+    orderBy: {
+      createdAt: 'desc'
+    }
+  });
+
+  return exams;
+};
+
+/**
+ * Update an existing exam
+ */
+const updateExam = async (
+  examId: number,
+  teacherId: number,
+  updateData: {
+    testCode?: string;
+    classCode?: string;
+    examTitle?: string;
+    questions?: Array<{
+      questionText: string;
+      questionType: string;
+      options: any;
+      correctAnswer: string;
+    }>;
+    isDraft?: boolean;
+  }
+) => {
+  // First verify the teacher owns this exam
+  const exam = await prisma.exam.findFirst({
+    where: {
+      id: examId,
+      userId: teacherId
+    }
+  });
+
+  if (!exam) {
+    throw new Error('Exam not found or you do not have permission to edit it');
+  }
+
+  // Check if new testCode is unique if it's being updated
+  if (updateData.testCode && updateData.testCode !== exam.testCode) {
+    const existingExam = await prisma.exam.findUnique({
+      where: { testCode: updateData.testCode }
+    });
+    if (existingExam) {
+      throw new Error('Test code already exists. Please choose a different one.');
+    }
+  }
+
+  // Start a transaction to handle both exam and questions updates
+  const updatedExam = await prisma.$transaction(async (tx) => {
+    // If there are questions to update
+    if (updateData.questions) {
+      // Delete existing questions
+      await tx.question.deleteMany({
+        where: { examId }
+      });
+
+      // Create new questions
+      await tx.question.createMany({
+        data: updateData.questions.map(q => ({
+          examId,
+          questionText: q.questionText,
+          questionType: q.questionType,
+          options: q.options,
+          correctAnswer: q.correctAnswer
+        }))
+      });
+    }
+
+    // Update the exam details
+    return await tx.exam.update({
+      where: { id: examId },
+      data: {
+        testCode: updateData.testCode,
+        classCode: updateData.classCode,
+        examTitle: updateData.examTitle,
+        isDraft: updateData.isDraft,
+        status: updateData.isDraft ? 'draft' : 'pending'
+      },
+      include: {
+        questions: true
+      }
+    });
+  });
+
+  return updatedExam;
+};
+
+/**
+ * Delete an exam
+ */
+const deleteExam = async (examId: number, teacherId: number) => {
+  // Verify the teacher owns this exam
+  const exam = await prisma.exam.findFirst({
+    where: {
+      id: examId,
+      userId: teacherId
+    }
+  });
+
+  if (!exam) {
+    throw new Error('Exam not found or you do not have permission to delete it');
+  }
+
+  // Delete the exam and all related data in a transaction
+  await prisma.$transaction(async (tx) => {
+    // Delete related scores
+    await tx.score.deleteMany({
+      where: { examId }
+    });
+
+    // Delete related exam answers
+    await tx.examAnswer.deleteMany({
+      where: { examId }
+    });
+
+    // Delete related questions
+    await tx.question.deleteMany({
+      where: { examId }
+    });
+
+    // Finally delete the exam
+    await tx.exam.delete({
+      where: { id: examId }
+    });
+  });
+
+  return { success: true, message: 'Exam deleted successfully' };
+};
+
+const getItemAnalysis = async (examId: number) => {
+  const analysis = await prisma.examAnswer.groupBy({
+    by: ['questionId', 'isCorrect'],
+    where: {
+      examId: examId
+    },
+    _count: {
+      isCorrect: true
+    }
+  });
+
+  // Get all questions for this exam
+  const questions = await prisma.question.findMany({
+    where: {
+      examId: examId
+    },
+    select: {
+      id: true,
+      questionText: true,
+      correctAnswer: true
+    }
+  });
+
+  // Get total number of students who took the exam
+  const totalStudents = await prisma.score.count({
+    where: {
+      examId: examId
+    }
+  });
+
+  // Format the analysis
+  const itemAnalysis = questions.map((question, index) => {
+    const correctCount = analysis.find(a => 
+      a.questionId === question.id && a.isCorrect === true
+    )?._count.isCorrect || 0;
+
+    const incorrectCount = analysis.find(a => 
+      a.questionId === question.id && a.isCorrect === false
+    )?._count.isCorrect || 0;
+
+    return {
+      questionId: question.id,
+      questionNumber: index + 1,
+      questionText: question.questionText,
+      correctAnswer: question.correctAnswer,
+      correctCount,
+      incorrectCount,
+      totalAnswered: correctCount + incorrectCount,
+      totalStudents,
+      percentageCorrect: totalStudents ? Math.round((correctCount / totalStudents) * 100) : 0
+    };
+  });
+
+  return itemAnalysis;
+};
+
 export { registerAdmin, registerStudent, 
   registerTeacher, loginUser,  
   updateUserProfile, prisma,QuestionType,
@@ -572,5 +807,9 @@ export { registerAdmin, registerStudent,
   fetchStudentList,
   fetchTeacherList,
   fetchAdminList,
-  fetchStudentScores
+  fetchStudentScores,
+  fetchTeacherExams,
+  updateExam,
+  deleteExam,
+  getItemAnalysis
 };
