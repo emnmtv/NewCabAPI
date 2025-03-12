@@ -16,8 +16,20 @@ import { fetchExamQuestions,answerExam,
   fetchSurveyByCode, 
   submitSurveyResponse, 
   fetchSurveyResults,
-  fetchUserSurveys
+  fetchUserSurveys,
+  createGradeSection,
+  getAllGradeSections,
+  updateGradeSection,
+  deleteGradeSection,
+  updateUser,
+  deleteUser,
+  setExamAccess,
+  getExamAccess,
+  checkExamAccess
 } from '../utils/authUtils';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 // Register a new student
 const handleRegisterStudent = async (req: AuthRequest, res: Response) => {
@@ -384,6 +396,168 @@ const handleGetUserSurveys = async (req: AuthRequest, res: Response) => {
   }
 };
 
+const handleCreateGradeSection = async (req: AuthRequest, res: Response) => {
+  const { grade, section } = req.body;
+  
+  try {
+    const gradeSection = await createGradeSection(grade, section);
+    res.status(201).json({ message: 'Grade section created successfully', gradeSection });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+const handleGetAllGradeSections = async (_req: AuthRequest, res: Response) => {
+  try {
+    const gradeSections = await getAllGradeSections();
+    res.status(200).json({ gradeSections });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+const handleUpdateGradeSection = async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const { grade, section } = req.body;
+  
+  try {
+    const updatedGradeSection = await updateGradeSection(Number(id), grade, section);
+    res.status(200).json({ message: 'Grade section updated successfully', updatedGradeSection });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+const handleDeleteGradeSection = async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  
+  try {
+    await deleteGradeSection(Number(id));
+    res.status(200).json({ message: 'Grade section deleted successfully' });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+const handleUpdateUser = async (req: AuthRequest, res: Response) => {
+  const { userId } = req.params;
+  const updateData = req.body;
+
+  try {
+    // Validate password length if being updated
+    if (updateData.password && updateData.password.length < 8) {
+      throw new Error('Password must be at least 8 characters');
+    }
+
+    const updatedUser = await updateUser(Number(userId), updateData);
+    res.status(200).json({ message: 'User updated successfully', user: updatedUser });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+const handleDeleteUser = async (req: AuthRequest, res: Response) => {
+  const { userId } = req.params;
+
+  try {
+    await deleteUser(Number(userId));
+    res.status(200).json({ message: 'User deleted successfully' });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+const handleGetUserDetails = async (req: AuthRequest, res: Response) => {
+  const { userId } = req.params;
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: Number(userId) },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        role: true,
+        address: true,
+        lrn: true,
+        gradeLevel: true,
+        section: true,
+        department: true,
+        domain: true,
+        createdAt: true
+      }
+    });
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    res.status(200).json(user);
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+const handleSetExamAccess = async (req: AuthRequest, res: Response) => {
+  const { examId } = req.params;
+  const { gradeAccess } = req.body;
+
+  try {
+    const access = await setExamAccess(Number(examId), gradeAccess);
+    res.status(200).json({ message: 'Exam access updated successfully', access });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+const handleGetExamAccess = async (req: AuthRequest, res: Response) => {
+  const { examId } = req.params;
+
+  try {
+    const access = await getExamAccess(Number(examId));
+    res.status(200).json({ access });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+const handleCheckExamAccess = async (req: AuthRequest, res: Response) => {
+  const { examId } = req.params;
+  const { grade, section } = req.query;
+
+  try {
+    const hasAccess = await checkExamAccess(
+      Number(examId), 
+      Number(grade), 
+      section as string
+    );
+    res.status(200).json({ hasAccess });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+const handleGetAllExams = async (_req: AuthRequest, res: Response) => {
+  try {
+    const exams = await prisma.exam.findMany({
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true
+          }
+        }
+      }
+    });
+    
+    res.status(200).json({ exams });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
 export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin,  handleUpdateProfile,handleCreateExam,handleAnswerExam
   ,handleFetchExamQuestions, handleStartExam,handleStopExam, handleGetUserProfile,
   handleGetStudents,
@@ -397,5 +571,16 @@ export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, hand
   handleFetchSurvey,
   handleSubmitSurvey,
   handleGetSurveyResults,
-  handleGetUserSurveys
+  handleGetUserSurveys,
+  handleCreateGradeSection,
+  handleGetAllGradeSections,
+  handleUpdateGradeSection,
+  handleDeleteGradeSection,
+  handleUpdateUser,
+  handleDeleteUser,
+  handleGetUserDetails,
+  handleSetExamAccess,
+  handleGetExamAccess,
+  handleCheckExamAccess,
+  handleGetAllExams
 };

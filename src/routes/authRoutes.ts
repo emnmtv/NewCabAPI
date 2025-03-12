@@ -20,7 +20,18 @@ import { handleAnswerExam,handleLogin,
     handleFetchSurvey,
     handleSubmitSurvey,
     handleGetSurveyResults,
-    handleGetUserSurveys
+    handleGetUserSurveys,
+    handleCreateGradeSection,
+    handleGetAllGradeSections,
+    handleUpdateGradeSection,
+    handleDeleteGradeSection,
+    handleUpdateUser,
+    handleDeleteUser,
+    handleGetUserDetails,
+    handleSetExamAccess,
+    handleGetExamAccess,
+    handleCheckExamAccess,
+    handleGetAllExams
 } from '../controllers/authController';
 import { authenticateToken } from '../middleware/authMiddleware';
 
@@ -57,5 +68,26 @@ authRouter.get('/my-surveys', authenticateToken, handleGetUserSurveys);
 authRouter.get('/survey/:code', handleFetchSurvey); // No auth required
 authRouter.post('/survey/:code/submit', handleSubmitSurvey); // No auth required
 authRouter.get('/survey/:code/results', authenticateToken, handleGetSurveyResults);
+
+// Add these new routes
+authRouter.post('/grade-section', authenticateToken, handleCreateGradeSection);
+authRouter.get('/grade-sections', authenticateToken, handleGetAllGradeSections);
+authRouter.put('/grade-section/:id', authenticateToken, handleUpdateGradeSection);
+authRouter.delete('/grade-section/:id', authenticateToken, handleDeleteGradeSection);
+
+// Add these routes
+authRouter.put('/user/:userId', authenticateToken, handleUpdateUser);
+authRouter.delete('/user/:userId', authenticateToken, handleDeleteUser);
+
+// Add this route
+authRouter.get('/user/:userId', authenticateToken, handleGetUserDetails);
+
+// Add these routes
+authRouter.post('/exam/:examId/access', authenticateToken, handleSetExamAccess);
+authRouter.get('/exam/:examId/access', authenticateToken, handleGetExamAccess);
+authRouter.get('/exam/:examId/check-access', authenticateToken, handleCheckExamAccess);
+
+// Add this route
+authRouter.get('/exams', authenticateToken, handleGetAllExams);
 
 export { authRouter };

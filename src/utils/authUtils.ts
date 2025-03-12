@@ -975,6 +975,125 @@ const fetchSurveyResults = async (code: string) => {
   return survey;
 };
 
+// Create a new grade and section
+const createGradeSection = async (grade: number, section: string) => {
+  return await prisma.gradeSection.create({
+    data: {
+      grade,
+      section
+    }
+  });
+};
+
+// Get all grade sections
+const getAllGradeSections = async () => {
+  return await prisma.gradeSection.findMany({
+    orderBy: [
+      { grade: 'asc' },
+      { section: 'asc' }
+    ]
+  });
+};
+
+// Update a grade section
+const updateGradeSection = async (id: number, grade: number, section: string) => {
+  return await prisma.gradeSection.update({
+    where: { id },
+    data: {
+      grade,
+      section
+    }
+  });
+};
+
+// Delete a grade section
+const deleteGradeSection = async (id: number) => {
+  return await prisma.gradeSection.delete({
+    where: { id }
+  });
+};
+
+/**
+ * Update user information
+ */
+const updateUser = async (userId: number, updateData: {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  address?: string;
+  lrn?: number;
+  gradeLevel?: number;
+  section?: string;
+  department?: string;
+  domain?: string;
+  password?: string;
+}) => {
+  // Hash the password if it's being updated
+  if (updateData.password) {
+    const hashedPassword = await bcrypt.hash(updateData.password, 10);
+    updateData.password = hashedPassword;
+  }
+
+  return await prisma.user.update({
+    where: { id: userId },
+    data: updateData
+  });
+};
+
+/**
+ * Delete a user
+ */
+const deleteUser = async (userId: number) => {
+  return await prisma.user.delete({
+    where: { id: userId }
+  });
+};
+
+// Add this interface for exam access settings
+interface ExamAccess {
+  examId: number;
+  grade: number;
+  section: string;
+  isEnabled: boolean;
+}
+
+// Add these functions to manage exam access
+const setExamAccess = async (examId: number, gradeAccess: ExamAccess[]) => {
+  // First delete any existing access settings for this exam
+  await prisma.examAccess.deleteMany({
+    where: { examId }
+  });
+
+  // Then create new access settings
+  return await prisma.examAccess.createMany({
+    data: gradeAccess.map(access => ({
+      examId: access.examId,
+      grade: access.grade,
+      section: access.section,
+      isEnabled: access.isEnabled
+    }))
+  });
+};
+
+const getExamAccess = async (examId: number) => {
+  return await prisma.examAccess.findMany({
+    where: { examId }
+  });
+};
+
+const checkExamAccess = async (examId: number, grade: number, section: string) => {
+  const access = await prisma.examAccess.findFirst({
+    where: {
+      examId,
+      grade,
+      section,
+      isEnabled: true
+    }
+  });
+
+  return !!access; // Returns true if access exists and is enabled
+};
+
 export { registerAdmin, registerStudent, 
   registerTeacher, loginUser,  
   updateUserProfile, prisma,QuestionType,
@@ -993,5 +1112,14 @@ export { registerAdmin, registerStudent,
   fetchSurveyByCode,
   submitSurveyResponse,
   fetchSurveyResults,
-  fetchUserSurveys
+  fetchUserSurveys,
+  createGradeSection,
+  getAllGradeSections,
+  updateGradeSection,
+  deleteGradeSection,
+  updateUser,
+  deleteUser,
+  setExamAccess,
+  getExamAccess,
+  checkExamAccess
 };

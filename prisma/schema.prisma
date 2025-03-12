@@ -54,6 +54,7 @@ model Exam {
   scores        Score[]       // Add this line
   createdAt     DateTime      @default(now())   // Add this field
   updatedAt     DateTime      @updatedAt        // Add this field
+  access        ExamAccess[]
 }
 
 model ExamAnswer {
@@ -127,6 +128,27 @@ model SurveyAnswer {
   answer          String
   response        SurveyResponse @relation(fields: [responseId], references: [id])
   question        SurveyQuestion @relation(fields: [questionId], references: [id])
+}
+
+model GradeSection {
+  id        Int      @id @default(autoincrement())
+  grade     Int
+  section   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([grade, section]) // Ensure unique combination of grade and section
+}
+
+model ExamAccess {
+  id        Int      @id @default(autoincrement())
+  examId    Int
+  grade     Int
+  section   String
+  isEnabled Boolean  @default(true)
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@unique([examId, grade, section])
 }
 
 
