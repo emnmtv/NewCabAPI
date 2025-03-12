@@ -11,7 +11,12 @@ import { fetchExamQuestions,answerExam,
   fetchTeacherExams,
   updateExam,
   deleteExam,
-  getItemAnalysis
+  getItemAnalysis,
+  createSurvey, 
+  fetchSurveyByCode, 
+  submitSurveyResponse, 
+  fetchSurveyResults,
+  fetchUserSurveys
 } from '../utils/authUtils';
 
 // Register a new student
@@ -308,6 +313,77 @@ export const handleGetExamAnalysis = async (req: AuthRequest, res: Response) => 
   }
 };
 
+// Create a new survey
+const handleCreateSurvey = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const { title, description, questions } = req.body;
+    
+    const survey = await createSurvey(userId, title, description, questions);
+    
+    res.status(201).json({
+      message: 'Survey created successfully',
+      survey
+    });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+// Fetch survey by code
+const handleFetchSurvey = async (req: AuthRequest, res: Response) => {
+  try {
+    const { code } = req.params;
+    const survey = await fetchSurveyByCode(code);
+    res.status(200).json({ survey });
+  } catch (error) {
+    res.status(404).json({ error: (error as Error).message });
+  }
+};
+
+// Submit survey response
+const handleSubmitSurvey = async (req: AuthRequest, res: Response) => {
+  try {
+    const { code } = req.params;
+    const { respondent, answers } = req.body;
+
+    if (!code || !answers) {
+      throw new Error('Survey code and answers are required');
+    }
+
+    const response = await submitSurveyResponse(code, respondent, answers);
+    
+    res.status(200).json({
+      message: 'Survey response submitted successfully',
+      response
+    });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+// Fetch survey results
+const handleGetSurveyResults = async (req: AuthRequest, res: Response) => {
+  try {
+    const { code } = req.params;
+    const results = await fetchSurveyResults(code);
+    res.status(200).json({ results });
+  } catch (error) {
+    res.status(404).json({ error: (error as Error).message });
+  }
+};
+
+// Add new handler to get user's surveys
+const handleGetUserSurveys = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const surveys = await fetchUserSurveys(userId);
+    res.status(200).json({ surveys });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
 export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin,  handleUpdateProfile,handleCreateExam,handleAnswerExam
   ,handleFetchExamQuestions, handleStartExam,handleStopExam, handleGetUserProfile,
   handleGetStudents,
@@ -317,4 +393,9 @@ export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, hand
   handleGetTeacherExams,
   handleUpdateExam,
   handleDeleteExam,
+  handleCreateSurvey,
+  handleFetchSurvey,
+  handleSubmitSurvey,
+  handleGetSurveyResults,
+  handleGetUserSurveys
 };

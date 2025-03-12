@@ -26,6 +26,7 @@ model User {
   examAnswers  ExamAnswer[] // Relation to ExamAnswer
   exams        Exam[] // Add this line to define the relation to Exam
   scores       Score[]  // Add this line
+  surveys      Survey[]    // Add surveys relation
 }
 
 model Question {
@@ -82,6 +83,50 @@ model Score {
   exam      Exam     @relation(fields: [examId], references: [id])
   
   @@unique([userId, examId])
+}
+
+model Survey {
+  id          Int           @id @default(autoincrement())
+  title       String
+  description String?
+  code        String       @unique // Survey access code
+  isActive    Boolean      @default(true)
+  userId      Int          // Add userId field
+  user        User         @relation(fields: [userId], references: [id]) // Add relation to User
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  questions   SurveyQuestion[]
+  responses   SurveyResponse[]
+}
+
+model SurveyQuestion {
+  id          Int      @id @default(autoincrement())
+  surveyId    Int
+  questionText String
+  questionType String  // 'multiple_choice', 'text', 'rating'
+  options     Json?    // For multiple choice questions
+  required    Boolean  @default(true)
+  order       Int      // Question order in survey
+  survey      Survey   @relation(fields: [surveyId], references: [id])
+  answers     SurveyAnswer[]
+}
+
+model SurveyResponse {
+  id          Int      @id @default(autoincrement())
+  surveyId    Int
+  respondent  String?  // Optional respondent identifier
+  createdAt   DateTime @default(now())
+  survey      Survey   @relation(fields: [surveyId], references: [id])
+  answers     SurveyAnswer[]
+}
+
+model SurveyAnswer {
+  id              Int            @id @default(autoincrement())
+  responseId      Int
+  questionId      Int
+  answer          String
+  response        SurveyResponse @relation(fields: [responseId], references: [id])
+  question        SurveyQuestion @relation(fields: [questionId], references: [id])
 }
 
 

@@ -15,7 +15,12 @@ import { handleAnswerExam,handleLogin,
     handleGetTeacherExams,
     handleUpdateExam,
     handleDeleteExam,
-    handleGetExamAnalysis
+    handleGetExamAnalysis,
+    handleCreateSurvey,
+    handleFetchSurvey,
+    handleSubmitSurvey,
+    handleGetSurveyResults,
+    handleGetUserSurveys
 } from '../controllers/authController';
 import { authenticateToken } from '../middleware/authMiddleware';
 
@@ -45,5 +50,12 @@ authRouter.get('/teacher-exams', authenticateToken, handleGetTeacherExams);
 authRouter.put('/exam/:examId', authenticateToken, handleUpdateExam);
 authRouter.delete('/exam/:examId', authenticateToken, handleDeleteExam);
 authRouter.get('/exam-analysis/:examId', authenticateToken, handleGetExamAnalysis);
+
+// Survey routes - note that some don't require authentication
+authRouter.post('/survey', authenticateToken, handleCreateSurvey);
+authRouter.get('/my-surveys', authenticateToken, handleGetUserSurveys);
+authRouter.get('/survey/:code', handleFetchSurvey); // No auth required
+authRouter.post('/survey/:code/submit', handleSubmitSurvey); // No auth required
+authRouter.get('/survey/:code/results', authenticateToken, handleGetSurveyResults);
 
 export { authRouter };

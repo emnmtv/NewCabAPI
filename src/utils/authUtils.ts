@@ -798,6 +798,183 @@ const getItemAnalysis = async (examId: number) => {
   return itemAnalysis;
 };
 
+// Create a new survey
+const createSurvey = async (
+  userId: number,
+  title: string,
+  description: string | null,
+  questions: Array<{
+    questionText: string,
+    questionType: string,
+    options: any,
+    required: boolean,
+    order: number
+  }>
+) => {
+  // Generate a random 6-character code
+  const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+  const survey = await prisma.survey.create({
+    data: {
+      title,
+      description,
+      code,
+      userId,
+      questions: {
+        create: questions.map(q => ({
+          questionText: q.questionText,
+          questionType: q.questionType,
+          options: typeof q.options === 'string' ? q.options : JSON.stringify(q.options),
+          required: q.required,
+          order: q.order
+        }))
+      }
+    },
+    include: {
+      questions: true,
+      user: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true
+        }
+      }
+    }
+  });
+
+  return survey;
+};
+
+// Add new function to fetch user's surveys
+const fetchUserSurveys = async (userId: number) => {
+  const surveys = await prisma.survey.findMany({
+    where: {
+      userId
+    },
+    include: {
+      questions: true,
+      responses: {
+        select: {
+          id: true,
+          createdAt: true
+        }
+      }
+    },
+    orderBy: {
+      createdAt: 'desc'
+    }
+  });
+
+  return surveys;
+};
+
+// Fetch survey by code
+const fetchSurveyByCode = async (code: string) => {
+  const survey = await prisma.survey.findUnique({
+    where: { code },
+    include: {
+      questions: {
+        orderBy: {
+          order: 'asc'
+        }
+      }
+    }
+  });
+
+  if (!survey || !survey.isActive) {
+    throw new Error('Survey not found or inactive');
+  }
+
+  return survey;
+};
+
+// Submit survey response
+const submitSurveyResponse = async (
+  code: string,
+  respondent: string | null,
+  answers: Array<{
+    questionId: number,
+    answer: string | string[]
+  }>
+) => {
+  if (!code) {
+    throw new Error('Survey code is required');
+  }
+
+  const formattedCode = code.trim().toUpperCase();
+
+  const survey = await prisma.survey.findUnique({
+    where: { 
+      code: formattedCode
+    }
+  });
+
+  if (!survey || !survey.isActive) {
+    throw new Error('Survey not found or inactive');
+  }
+
+  // Validate that all questionIds exist in the survey
+  const validQuestionIds = await prisma.surveyQuestion.findMany({
+    where: {
+      surveyId: survey.id
+    },
+    select: {
+      id: true
+    }
+  });
+
+  const validIds = new Set(validQuestionIds.map(q => q.id));
+  const invalidQuestions = answers.filter(a => !validIds.has(a.questionId));
+
+  if (invalidQuestions.length > 0) {
+    throw new Error('Invalid question IDs provided');
+  }
+
+  const response = await prisma.surveyResponse.create({
+    data: {
+      surveyId: survey.id,
+      respondent,
+      answers: {
+        create: answers.map(a => ({
+          questionId: a.questionId,
+          answer: Array.isArray(a.answer) ? JSON.stringify(a.answer) : a.answer,
+        }))
+      }
+    }
+  });
+
+  return response;
+};
+
+// Fetch survey results
+const fetchSurveyResults = async (code: string) => {
+  const survey = await prisma.survey.findUnique({
+    where: { code },
+    include: {
+      questions: {
+        include: {
+          answers: {
+            include: {
+              response: true
+            }
+          }
+        }
+      },
+      responses: {
+        include: {
+          answers: true
+        }
+      }
+    }
+  });
+
+  if (!survey) {
+    throw new Error('Survey not found');
+  }
+
+  return survey;
+};
+
 export { registerAdmin, registerStudent, 
   registerTeacher, loginUser,  
   updateUserProfile, prisma,QuestionType,
@@ -811,5 +988,10 @@ export { registerAdmin, registerStudent,
   fetchTeacherExams,
   updateExam,
   deleteExam,
-  getItemAnalysis
+  getItemAnalysis,
+  createSurvey,
+  fetchSurveyByCode,
+  submitSurveyResponse,
+  fetchSurveyResults,
+  fetchUserSurveys
 };
