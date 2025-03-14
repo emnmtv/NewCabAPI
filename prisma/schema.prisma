@@ -36,6 +36,7 @@ model Question {
   questionType  String
   options       Json     // Use Json type to store an array of options
   correctAnswer String
+  imageUrl      String?  // Add this field for storing image URLs
   exam          Exam     @relation(fields: [examId], references: [id])
   examAnswers   ExamAnswer[] // Add this line to define the opposite relation
 }

@@ -31,7 +31,10 @@ import { handleAnswerExam,handleLogin,
     handleSetExamAccess,
     handleGetExamAccess,
     handleCheckExamAccess,
-    handleGetAllExams
+    handleGetAllExams,
+    handleImageUpload,
+    handleGetAvailableSections,
+    handleGetStudentExamHistory
 } from '../controllers/authController';
 import { authenticateToken } from '../middleware/authMiddleware';
 
@@ -89,5 +92,14 @@ authRouter.get('/exam/:examId/check-access', authenticateToken, handleCheckExamA
 
 // Add this route
 authRouter.get('/exams', authenticateToken, handleGetAllExams);
+
+// Add this new route
+authRouter.post('/upload-image', authenticateToken, handleImageUpload);
+
+// Add this route
+authRouter.get('/available-sections', authenticateToken, handleGetAvailableSections);
+
+// Add this new route
+authRouter.get('/student-exam-history', authenticateToken, handleGetStudentExamHistory);
 
 export { authRouter };

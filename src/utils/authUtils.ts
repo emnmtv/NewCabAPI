@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import path from 'path';
 
 const prisma = new PrismaClient();
 const JWT_SECRET = 'fallback_secret';  // Make sure this matches the one in authMiddleware.ts
@@ -183,7 +184,8 @@ const createExam = async (
     questionText: string,
     questionType: string,
     options: any,
-    correctAnswer: string
+    correctAnswer: string,
+    imageUrl?: string  // Add optional imageUrl parameter
   }>,
   userId: number,
   isDraft: boolean
@@ -210,7 +212,8 @@ const createExam = async (
           questionText: q.questionText,
           questionType: q.questionType,
           options: q.options,
-          correctAnswer: q.correctAnswer
+          correctAnswer: q.correctAnswer,
+          imageUrl: q.imageUrl || null  // Include the imageUrl field
         }))
       }
     },
@@ -353,7 +356,7 @@ const fetchExamQuestions = async (testCode: string) => {
     where: { testCode },
     select: { 
       id: true, 
-      status: true,  // Make sure status is selected
+      status: true,
       examTitle: true, 
       classCode: true, 
       testCode: true 
@@ -370,7 +373,7 @@ const fetchExamQuestions = async (testCode: string) => {
       examTitle: exam.examTitle,
       classCode: exam.classCode,
       testCode: exam.testCode,
-      status: exam.status,  // Explicitly include status in the response
+      status: exam.status,
       questions: null, // Indicating that questions are not available yet
     };
   }
@@ -382,7 +385,8 @@ const fetchExamQuestions = async (testCode: string) => {
       id: true,
       questionText: true,
       questionType: true,
-      options: true, // Includes options if stored as JSON
+      options: true,
+      imageUrl: true  // Make sure to include imageUrl
     }
   });
 
@@ -390,12 +394,13 @@ const fetchExamQuestions = async (testCode: string) => {
     examTitle: exam.examTitle,
     classCode: exam.classCode,
     testCode: exam.testCode,
-    status: exam.status,  // Explicitly include status in the response
+    status: exam.status,
     questions: examQuestions.map(question => ({
       questionId: question.id,
       questionText: question.questionText,
       questionType: question.questionType,
-      options: question.options, // Sending options if applicable
+      options: question.options,
+      imageUrl: question.imageUrl ? `/uploads/${path.basename(question.imageUrl)}` : null  // Format the image URL properly
     })),
   };
 };
@@ -634,6 +639,7 @@ const updateExam = async (
       questionType: string;
       options: any;
       correctAnswer: string;
+      imageUrl?: string;  // Add optional imageUrl parameter
     }>;
     isDraft?: boolean;
   }
@@ -676,7 +682,8 @@ const updateExam = async (
           questionText: q.questionText,
           questionType: q.questionType,
           options: q.options,
-          correctAnswer: q.correctAnswer
+          correctAnswer: q.correctAnswer,
+          imageUrl: q.imageUrl || null  // Include the imageUrl field
         }))
       });
     }
@@ -761,7 +768,8 @@ const getItemAnalysis = async (examId: number) => {
     select: {
       id: true,
       questionText: true,
-      correctAnswer: true
+      correctAnswer: true,
+      imageUrl: true  // Include imageUrl in the selection
     }
   });
 
@@ -787,6 +795,7 @@ const getItemAnalysis = async (examId: number) => {
       questionNumber: index + 1,
       questionText: question.questionText,
       correctAnswer: question.correctAnswer,
+      imageUrl: question.imageUrl,  // Include imageUrl in the returned data
       correctCount,
       incorrectCount,
       totalAnswered: correctCount + incorrectCount,
@@ -1094,6 +1103,103 @@ const checkExamAccess = async (examId: number, grade: number, section: string) =
   return !!access; // Returns true if access exists and is enabled
 };
 
+/**
+ * Fetch detailed exam history for a student
+ * Returns all exams taken by the student with detailed information
+ */
+const fetchStudentExamHistory = async (studentId: number) => {
+  // Get all scores for the student
+  const scores = await prisma.score.findMany({
+    where: {
+      userId: studentId
+    },
+    include: {
+      exam: {
+        select: {
+          id: true,
+          testCode: true,
+          examTitle: true,
+          classCode: true,
+          status: true,
+          createdAt: true,
+          user: {
+            select: {
+              firstName: true,
+              lastName: true
+            }
+          }
+        }
+      }
+    },
+    orderBy: {
+      submittedAt: 'desc'
+    }
+  });
+
+  // For each exam, fetch the questions and student's answers
+  const detailedExamHistory = await Promise.all(scores.map(async (score) => {
+    // Get all questions for this exam
+    const questions = await prisma.question.findMany({
+      where: {
+        examId: score.examId
+      },
+      select: {
+        id: true,
+        questionText: true,
+        questionType: true,
+        options: true,
+        correctAnswer: true,
+        imageUrl: true
+      }
+    });
+
+    // Get student's answers for this exam
+    const answers = await prisma.examAnswer.findMany({
+      where: {
+        examId: score.examId,
+        userId: studentId
+      },
+      select: {
+        questionId: true,
+        userAnswer: true,
+        isCorrect: true
+      }
+    });
+
+    // Map answers to questions for easier access
+    const answerMap = new Map();
+    answers.forEach(answer => {
+      answerMap.set(answer.questionId, {
+        userAnswer: answer.userAnswer,
+        isCorrect: answer.isCorrect
+      });
+    });
+
+    // Add user's answer to each question
+    const questionsWithAnswers = questions.map(question => {
+      const answer = answerMap.get(question.id);
+      return {
+        ...question,
+        userAnswer: answer ? answer.userAnswer : null,
+        isCorrect: answer ? answer.isCorrect : null
+      };
+    });
+
+    return {
+      score: {
+        score: score.score,
+        total: score.total,
+        percentage: score.percentage,
+        submittedAt: score.submittedAt
+      },
+      exam: score.exam,
+      questions: questionsWithAnswers
+    };
+  }));
+
+  return detailedExamHistory;
+};
+
 export { registerAdmin, registerStudent, 
   registerTeacher, loginUser,  
   updateUserProfile, prisma,QuestionType,
@@ -1121,5 +1227,6 @@ export { registerAdmin, registerStudent,
   deleteUser,
   setExamAccess,
   getExamAccess,
-  checkExamAccess
+  checkExamAccess,
+  fetchStudentExamHistory
 };

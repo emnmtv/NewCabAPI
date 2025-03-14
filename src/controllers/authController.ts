@@ -25,9 +25,13 @@ import { fetchExamQuestions,answerExam,
   deleteUser,
   setExamAccess,
   getExamAccess,
-  checkExamAccess
+  checkExamAccess,
+  fetchStudentExamHistory
 } from '../utils/authUtils';
 import { PrismaClient } from '@prisma/client';
+import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs';
+import path from 'path';
 
 const prisma = new PrismaClient();
 
@@ -106,7 +110,7 @@ const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
 // Create a new exam
 const handleCreateExam = async (req: AuthRequest, res: Response) => {
   const { testCode, classCode, examTitle, questions, isDraft } = req.body;
-  const userId = req.user!.userId; // Get userId from the request
+  const userId = req.user!.userId;
   
   try {
     const exam = await createExam(
@@ -264,14 +268,48 @@ const handleGetStudentScores = async (req: AuthRequest, res: Response) => {
 };
 
 /**
- * Handler to fetch teacher's exams
+ * Handler to get exams created by a teacher
  */
 const handleGetTeacherExams = async (req: AuthRequest, res: Response) => {
   const teacherId = req.user!.userId;
   
   try {
     const exams = await fetchTeacherExams(teacherId);
-    res.status(200).json({ exams });
+    
+    // Ensure we're returning full question data including images
+    const examsWithDetails = await Promise.all(exams.map(async (exam) => {
+      // Get questions with all details including images
+      const questions = await prisma.question.findMany({
+        where: { examId: exam.id },
+        select: {
+          id: true,
+          questionText: true,
+          questionType: true,
+          options: true,
+          correctAnswer: true,
+          imageUrl: true
+        }
+      });
+      
+      // Get score statistics
+      const scores = await prisma.score.findMany({
+        where: { examId: exam.id }
+      });
+      
+      // Get count of submissions
+      const examAnswersCount = await prisma.examAnswer.count({
+        where: { examId: exam.id }
+      });
+      
+      return {
+        ...exam,
+        questions,
+        scores,
+        _count: { examAnswers: examAnswersCount }
+      };
+    }));
+    
+    res.status(200).json({ exams: examsWithDetails });
   } catch (error) {
     console.error('Error fetching teacher exams:', error);
     res.status(500).json({ error: (error as Error).message });
@@ -558,6 +596,97 @@ const handleGetAllExams = async (_req: AuthRequest, res: Response) => {
   }
 };
 
+const handleImageUpload = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { image } = req.body;
+    
+    if (!image) {
+      res.status(400).json({ error: 'No image provided' });
+      return;
+    }
+    
+    // Extract the base64 data
+    const matches = image.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    
+    if (!matches || matches.length !== 3) {
+      res.status(400).json({ error: 'Invalid image format' });
+      return;
+    }
+    
+    const imageType = matches[1];
+    const imageData = matches[2];
+    const buffer = Buffer.from(imageData, 'base64');
+    
+    // Generate a unique filename
+    const extension = imageType.split('/')[1];
+    const filename = `${uuidv4()}.${extension}`;
+    
+    // Create uploads directory if it doesn't exist
+    const uploadsDir = path.join(__dirname, '../../uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    
+    // Save the file
+    const filepath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filepath, buffer);
+    
+    // Return the URL to the saved image
+    const imageUrl = `/uploads/${filename}`;
+    res.status(200).json({ imageUrl });
+  } catch (error) {
+    console.error('Image upload error:', error);
+    res.status(500).json({ error: 'Failed to upload image' });
+  }
+};
+
+const handleGetAvailableSections = async (req: AuthRequest, res: Response) => {
+  const { grade } = req.query;
+  
+  try {
+    let sections;
+    
+    if (grade) {
+      // If grade is provided, filter sections by grade
+      sections = await prisma.gradeSection.findMany({
+        where: { grade: Number(grade) },
+        orderBy: { section: 'asc' }
+      });
+    } else {
+      // Otherwise, get all sections grouped by grade
+      sections = await prisma.gradeSection.findMany({
+        orderBy: [
+          { grade: 'asc' },
+          { section: 'asc' }
+        ]
+      });
+    }
+    
+    res.status(200).json({ sections });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to fetch a student's exam history with detailed information
+ */
+const handleGetStudentExamHistory = async (req: AuthRequest, res: Response) => {
+  try {
+    const studentId = req.user!.userId;
+    
+    const examHistory = await fetchStudentExamHistory(studentId);
+    
+    res.status(200).json({ 
+      message: 'Student exam history retrieved successfully',
+      examHistory 
+    });
+  } catch (error) {
+    console.error('Error fetching student exam history:', error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
 export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin,  handleUpdateProfile,handleCreateExam,handleAnswerExam
   ,handleFetchExamQuestions, handleStartExam,handleStopExam, handleGetUserProfile,
   handleGetStudents,
@@ -582,5 +711,8 @@ export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, hand
   handleSetExamAccess,
   handleGetExamAccess,
   handleCheckExamAccess,
-  handleGetAllExams
+  handleGetAllExams,
+  handleImageUpload,
+  handleGetAvailableSections,
+  handleGetStudentExamHistory
 };

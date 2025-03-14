@@ -4,6 +4,7 @@ import { Server, Socket } from 'socket.io';
 import { authRouter } from './routes/authRoutes';
 import cors from "cors";
 import { prisma } from './utils/authUtils'; // Import prisma client
+import path from 'path';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3300;  // Ensuring it's a number
@@ -28,15 +29,137 @@ app.use(
   })
 );
 
-app.use(express.json());
+// Add this configuration to increase the payload size limit
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
 app.use('/auth', authRouter);
+
+// Update the static file serving to include the full server URL
+app.use('/uploads', (req, res, next) => {
+  // Set appropriate headers for images
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  express.static(path.join(__dirname, '../uploads'))(req, res, next);
+});
 
 // WebSocket connection
 const studentsInExam = new Map(); // Map to track students by exam code
 const socketToExam = new Map(); // Map to track which exam a socket is in
 
+// Add these maps to track active users
+const activeUsers = new Map(); // Map to track active users by userId
+const userSockets = new Map(); // Map to track which sockets belong to which user
+
+// At the top of the file, add a helper function
+const disconnectUserSockets = (userId: string | number) => {
+  // Find all sockets belonging to this user
+  const socketsToDisconnect = Array.from(userSockets.entries())
+    .filter(([_, uid]) => uid === userId)
+    .map(([socketId]) => socketId);
+  
+  console.log(`Found ${socketsToDisconnect.length} existing sockets for user ${userId}`);
+  
+  // Disconnect each socket
+  socketsToDisconnect.forEach(socketId => {
+    const socket = io.sockets.sockets.get(socketId);
+    if (socket) {
+      console.log(`Force disconnecting socket ${socketId} for user ${userId}`);
+      socket.disconnect(true);
+    }
+    userSockets.delete(socketId);
+  });
+};
+
 io.on('connection', (socket: Socket) => {
   console.log('A user connected:', socket.id);
+
+  // Update the userLogin handler
+  socket.on('userLogin', async ({ userId, userRole }) => {
+    console.log(`User ${userId} (${userRole}) attempting to login`);
+    
+    // First, disconnect any existing sockets for this user
+    disconnectUserSockets(userId);
+    
+    // Clear any existing entries for this user
+    activeUsers.delete(userId);
+    
+    try {
+      // Retrieve user information from the database
+      const user = await prisma.user.findUnique({
+        where: { id: Number(userId) },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          role: true,
+          gradeLevel: true,
+          section: true,
+          department: true,
+          domain: true
+        },
+      });
+
+      if (!user) {
+        console.error(`User with ID ${userId} not found`);
+        return;
+      }
+
+      // Store user info in the active users map
+      activeUsers.set(userId, {
+        ...user,
+        socketId: socket.id,
+        lastActive: new Date()
+      });
+      
+      // Track which user this socket belongs to
+      userSockets.set(socket.id, userId);
+      
+      // Emit updated active users list to all clients
+      const activeUsersList = Array.from(activeUsers.values());
+      io.emit('activeUsersUpdate', activeUsersList);
+      
+      console.log(`User ${userId} successfully logged in with socket ${socket.id}`);
+      console.log(`Total active users: ${activeUsers.size}`);
+    } catch (error) {
+      console.error('Error handling user login:', error);
+    }
+  });
+
+  // Add this event to request active users list
+  socket.on('getActiveUsers', () => {
+    const activeUsersList = Array.from(activeUsers.values());
+    socket.emit('activeUsersUpdate', activeUsersList);
+  });
+
+  // Add this event for user heartbeat/activity
+  socket.on('userActivity', ({ userId }) => {
+    if (activeUsers.has(userId)) {
+      const userData = activeUsers.get(userId);
+      userData.lastActive = new Date();
+      activeUsers.set(userId, userData);
+    }
+  });
+
+  // Update the userLogout handler
+  socket.on('userLogout', ({ userId }) => {
+    console.log(`User ${userId} logged out`);
+    
+    // Disconnect all sockets for this user
+    disconnectUserSockets(userId);
+    
+    // Remove from active users
+    if (activeUsers.has(userId)) {
+      const userData = activeUsers.get(userId);
+      console.log(`Removing user from active users: ${userData.firstName} ${userData.lastName}`);
+      activeUsers.delete(userId);
+      
+      // Emit updated active users list
+      const activeUsersList = Array.from(activeUsers.values());
+      io.emit('activeUsersUpdate', activeUsersList);
+    }
+  });
 
   socket.on('joinExam', async ({ testCode, userId }) => {
     console.log(`User ${userId} joined exam with test code: ${testCode}`);
@@ -47,6 +170,7 @@ io.on('connection', (socket: Socket) => {
       select: {
         firstName: true,
         lastName: true,
+        role: true, // Add role to the selection
       },
     });
 
@@ -77,6 +201,49 @@ io.on('connection', (socket: Socket) => {
     // Emit the updated list to all clients in the room
     io.to(testCode).emit('studentJoined', studentsInThisExam);
     console.log(`Current students in exam ${testCode}:`, studentsInThisExam);
+    
+    // IMPORTANT: Make sure we don't lose the user's active status when joining an exam
+    // If this user is already in the active users list, update their socket ID
+    if (!activeUsers.has(userId)) {
+      console.log(`User ${userId} not in active users list, adding them`);
+      
+      // Retrieve full user information if not already in active users
+      const fullUser = await prisma.user.findUnique({
+        where: { id: Number(userId) },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          role: true,
+          gradeLevel: true,
+          section: true,
+          department: true,
+          domain: true
+        },
+      });
+      
+      if (fullUser) {
+        activeUsers.set(userId, {
+          ...fullUser,
+          socketId: socket.id,
+          lastActive: new Date()
+        });
+        
+        // Emit updated active users list
+        const activeUsersList = Array.from(activeUsers.values());
+        io.emit('activeUsersUpdate', activeUsersList);
+      }
+    } else {
+      // Just update the existing user's socket and activity
+      const userData = activeUsers.get(userId);
+      userData.socketId = socket.id;
+      userData.lastActive = new Date();
+      activeUsers.set(userId, userData);
+    }
+    
+    // Make sure this socket is associated with the user
+    userSockets.set(socket.id, userId);
   });
 
   socket.on('quitExam', ({ testCode }) => {
@@ -86,6 +253,10 @@ io.on('connection', (socket: Socket) => {
     const examCode = testCode || socketToExam.get(socket.id);
     
     if (examCode && studentsInExam.has(examCode)) {
+      // Get the user ID before removing from exam
+      const studentData = studentsInExam.get(examCode).get(socket.id);
+      const userId = studentData?.userId;
+      
       // Remove the student from the exam
       studentsInExam.get(examCode).delete(socket.id);
       
@@ -101,29 +272,61 @@ io.on('connection', (socket: Socket) => {
       
       // Leave the room
       socket.leave(examCode);
+      
+      // IMPORTANT: Make sure the user stays in the active users list
+      if (userId && activeUsers.has(userId)) {
+        console.log(`Keeping user ${userId} in active users list after quitting exam`);
+        const userData = activeUsers.get(userId);
+        userData.lastActive = new Date();
+        activeUsers.set(userId, userData);
+      }
     }
   });
 
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+  // Update the disconnect handler
+  socket.on('disconnect', (reason) => {
+    console.log('User disconnected:', socket.id, 'Reason:', reason);
     
-    // Find which exam this socket was in
-    const examCode = socketToExam.get(socket.id);
-    
-    if (examCode && studentsInExam.has(examCode)) {
-      // Remove the student from the exam
-      studentsInExam.get(examCode).delete(socket.id);
+    // Find which user this socket belonged to
+    const userId = userSockets.get(socket.id);
+    if (userId) {
+      console.log(`Socket ${socket.id} belonged to user ${userId}`);
       
-      // Get updated student list
-      const studentsInThisExam = Array.from(studentsInExam.get(examCode).values());
+      // Check if user has any other active sockets
+      let hasOtherSockets = false;
+      for (const [otherSocketId, uid] of userSockets.entries()) {
+        if (uid === userId && otherSocketId !== socket.id) {
+          hasOtherSockets = true;
+          break;
+        }
+      }
       
-      // Emit the updated list to all clients in the room
-      io.to(examCode).emit('studentLeft', studentsInThisExam);
-      console.log(`Current students in exam ${examCode} after disconnect:`, studentsInThisExam);
+      // Only remove from active users if this was their last socket
+      if (!hasOtherSockets) {
+        console.log(`Removing user ${userId} from active users (no other sockets)`);
+        activeUsers.delete(userId);
+        
+        // Emit updated active users list
+        const activeUsersList = Array.from(activeUsers.values());
+        io.emit('activeUsersUpdate', activeUsersList);
+      } else {
+        console.log(`User ${userId} has other active sockets, not removing from active users`);
+      }
+      
+      // Clean up this socket's reference
+      userSockets.delete(socket.id);
     }
     
-    // Clean up socket-to-exam mapping
-    socketToExam.delete(socket.id);
+    // Clean up exam-related maps
+    if (socketToExam.has(socket.id)) {
+      const examCode = socketToExam.get(socket.id);
+      if (studentsInExam.has(examCode)) {
+        studentsInExam.get(examCode).delete(socket.id);
+        const studentsInThisExam = Array.from(studentsInExam.get(examCode).values());
+        io.to(examCode).emit('studentLeft', studentsInThisExam);
+      }
+      socketToExam.delete(socket.id);
+    }
   });
 
   // Add this new event handler for exam progress
