@@ -5,7 +5,11 @@ import path from 'path';
 
 const prisma = new PrismaClient();
 const JWT_SECRET = 'fallback_secret';  // Make sure this matches the one in authMiddleware.ts
-
+const EXPIRATION_TIMES = {
+  admin: 0, // No expiration
+  teacher: 24 * 60 * 60, // 24 hours in seconds
+  student: 2 * 60 * 60 // 2 hours in seconds
+};
 // Helper function to return default values for optional fields
 const getOrDefault = (value: any, defaultValue: any = "") => value || defaultValue;
 
@@ -126,17 +130,24 @@ const loginUser = async (email: string | undefined, lrn: number | undefined, pas
     throw new Error('Invalid password');
   }
 
-  // Include role in the JWT token payload with 2 hour expiration
-  const token = jwt.sign(
-    { 
-      userId: user.id,
-      role: user.role,
-      exp: Math.floor(Date.now() / 1000) + (2 * 60 * 60) // 2 hours expiration
-    }, 
-    JWT_SECRET
-  );
+  // Get expiration time based on role
+  const expirationTime = EXPIRATION_TIMES[user.role as keyof typeof EXPIRATION_TIMES];
   
-  return { token };
+ // Create token payload
+ const tokenPayload: any = {
+  userId: user.id,
+  role: user.role
+};
+
+// Only add expiration if it's not an admin (expiration time > 0)
+if (expirationTime > 0) {
+  tokenPayload.exp = Math.floor(Date.now() / 1000) + expirationTime;
+}
+
+// Sign the token with the payload
+const token = jwt.sign(tokenPayload, JWT_SECRET);
+
+return { token };
 };
 
 
@@ -150,7 +161,8 @@ const updateUserProfile = async (
   gradeLevel?: number,
   section?: string,
   domain?: string,
-  department?: string
+  department?: string,
+  password?: string
 ) => {
   const updatedData: any = {};
 
@@ -162,6 +174,12 @@ const updateUserProfile = async (
   if (section) updatedData.section = section;
   if (domain) updatedData.domain = domain;
   if (department) updatedData.department = department;
+  
+  // If password is provided, hash it
+  if (password) {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    updatedData.password = hashedPassword;
+  }
 
   return await prisma.user.update({
     where: { id: userId },

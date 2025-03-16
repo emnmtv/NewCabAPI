@@ -88,8 +88,15 @@ const handleLogin = async (req: AuthRequest, res: Response) => {
 // Update a user's profile
 const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
-  const { firstName, lastName, email, address, gradeLevel, section, domain, department } = req.body;
+  const { firstName, lastName, email, address, gradeLevel, section, domain, department, password } = req.body;
+  
   try {
+    // Validate password length if provided
+    if (password && password.length < 8) {
+      res.status(400).json({ error: 'Password must be at least 8 characters' });
+      return; // Just return without a value
+    }
+    
     const updatedUser = await updateUserProfile(
       userId, 
       firstName, 
@@ -99,7 +106,8 @@ const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
       gradeLevel,
       section,
       domain,
-      department
+      department,
+      password
     );
     res.status(200).json({ message: 'Profile updated successfully', updatedUser });
   } catch (error) {
