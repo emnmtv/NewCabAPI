@@ -1218,6 +1218,190 @@ const fetchStudentExamHistory = async (studentId: number) => {
   return detailedExamHistory;
 };
 
+// Add this function to fetch all exams with detailed information for admin monitoring
+const fetchAllExamsForAdmin = async () => {
+  // First, get all exams with basic info
+  const exams = await prisma.exam.findMany({
+    orderBy: {
+      createdAt: 'desc'
+    }
+  });
+
+  // Then fetch additional data separately to avoid type errors
+  const result = await Promise.all(exams.map(async (exam) => {
+    // Get teacher info
+    const teacher = await prisma.user.findUnique({
+      where: { id: exam.userId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        role: true
+      }
+    });
+
+    // Get questions count
+    const questionsCount = await prisma.question.count({
+      where: { examId: exam.id }
+    });
+
+    // Get scores/submissions
+    const scores = await prisma.score.findMany({
+      where: { examId: exam.id },
+      select: {
+        id: true,
+        score: true,
+        percentage: true,
+        userId: true,
+        submittedAt: true
+      }
+    });
+
+    // Get access settings
+    const access = await prisma.examAccess.findMany({
+      where: { examId: exam.id }
+    });
+
+    // Calculate average score
+    const averageScore = scores.length > 0
+      ? scores.reduce((sum, score) => sum + score.percentage, 0) / scores.length
+      : null;
+
+    // Return combined data
+    return {
+      id: exam.id,
+      testCode: exam.testCode,
+      classCode: exam.classCode,
+      examTitle: exam.examTitle,
+      status: exam.status,
+      createdAt: exam.createdAt,
+      updatedAt: exam.updatedAt,
+      isDraft: exam.isDraft,
+      teacher,
+      totalQuestions: questionsCount,
+      totalSubmissions: scores.length,
+      accessSettings: access.map(a => ({
+        id: a.id,
+        grade: a.grade || 0,
+        section: a.section || ''
+      })),
+      averageScore
+    };
+  }));
+
+  return result;
+};
+
+/**
+ * Calculate Mean Percentage Score (MPS) for an exam
+ */
+const calculateExamMPS = async (examId: number) => {
+  // Get all scores for this exam
+  const scores = await prisma.score.findMany({
+    where: { examId },
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          gradeLevel: true,
+          section: true
+        }
+      }
+    }
+  });
+
+  if (scores.length === 0) {
+    return {
+      overallMPS: 0,
+      sectionMPS: [],
+      totalStudents: 0,
+      overallStats: {
+        highestScore: 0,
+        lowestScore: 0,
+        scoreDistribution: {
+          excellent: 0, // 90-100
+          good: 0,     // 80-89
+          satisfactory: 0, // 70-79
+          fair: 0,     // 60-69
+          poor: 0      // below 60
+        }
+      }
+    };
+  }
+
+  // Calculate overall MPS and stats
+  const overallMPS = scores.reduce((sum, score) => sum + score.percentage, 0) / scores.length;
+  const overallHighest = Math.max(...scores.map(s => s.percentage));
+  const overallLowest = Math.min(...scores.map(s => s.percentage));
+
+  // Calculate overall score distribution
+  const overallDistribution = {
+    excellent: scores.filter(s => s.percentage >= 90).length,
+    good: scores.filter(s => s.percentage >= 80 && s.percentage < 90).length,
+    satisfactory: scores.filter(s => s.percentage >= 70 && s.percentage < 80).length,
+    fair: scores.filter(s => s.percentage >= 60 && s.percentage < 70).length,
+    poor: scores.filter(s => s.percentage < 60).length
+  };
+
+  // Group scores by section
+  const sectionScores = new Map<string, number[]>();
+  
+  scores.forEach(score => {
+    const gradeLevel = score.user.gradeLevel || 0;
+    const section = score.user.section || 'Unknown';
+    const sectionKey = `G${gradeLevel}-${section}`;
+    
+    if (!sectionScores.has(sectionKey)) {
+      sectionScores.set(sectionKey, []);
+    }
+    
+    sectionScores.get(sectionKey)!.push(score.percentage);
+  });
+
+  // Calculate MPS and stats for each section
+  const sectionMPS = Array.from(sectionScores.entries()).map(([sectionName, percentages]) => {
+    const sectionScores = scores.filter(score => {
+      const gradeSection = `G${score.user.gradeLevel}-${score.user.section}`;
+      return gradeSection === sectionName;
+    });
+
+    // Calculate section score distribution
+    const distribution = {
+      excellent: sectionScores.filter(s => s.percentage >= 90).length,
+      good: sectionScores.filter(s => s.percentage >= 80 && s.percentage < 90).length,
+      satisfactory: sectionScores.filter(s => s.percentage >= 70 && s.percentage < 80).length,
+      fair: sectionScores.filter(s => s.percentage >= 60 && s.percentage < 70).length,
+      poor: sectionScores.filter(s => s.percentage < 60).length
+    };
+
+    return {
+      section: sectionName,
+      mps: percentages.reduce((sum, p) => sum + p, 0) / percentages.length,
+      studentCount: percentages.length,
+      highestScore: Math.max(...percentages),
+      lowestScore: Math.min(...percentages),
+      distribution
+    };
+  });
+
+  // Sort sections by MPS (highest first)
+  sectionMPS.sort((a, b) => b.mps - a.mps);
+
+  return {
+    overallMPS,
+    sectionMPS,
+    totalStudents: scores.length,
+    overallStats: {
+      highestScore: overallHighest,
+      lowestScore: overallLowest,
+      scoreDistribution: overallDistribution
+    }
+  };
+};
+
 export { registerAdmin, registerStudent, 
   registerTeacher, loginUser,  
   updateUserProfile, prisma,QuestionType,
@@ -1246,5 +1430,7 @@ export { registerAdmin, registerStudent,
   setExamAccess,
   getExamAccess,
   checkExamAccess,
-  fetchStudentExamHistory
+  fetchStudentExamHistory,
+  fetchAllExamsForAdmin,
+  calculateExamMPS
 };

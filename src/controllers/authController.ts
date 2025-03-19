@@ -26,7 +26,9 @@ import { fetchExamQuestions,answerExam,
   setExamAccess,
   getExamAccess,
   checkExamAccess,
-  fetchStudentExamHistory
+  fetchStudentExamHistory,
+  fetchAllExamsForAdmin,
+  calculateExamMPS
 } from '../utils/authUtils';
 import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
@@ -695,6 +697,51 @@ const handleGetStudentExamHistory = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Add this new handler for admin exam monitoring
+const handleGetAllExamsForAdmin = async (_req: AuthRequest, res: Response) => {
+  try {
+    const exams = await fetchAllExamsForAdmin();
+    res.status(200).json({ exams });
+  } catch (error) {
+    console.error('Error fetching all exams for admin:', error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to get Mean Percentage Score (MPS) for an exam
+ */
+const handleGetExamMPS = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const examId = parseInt(req.params.examId);
+    
+    // Validate that the exam exists
+    const exam = await prisma.exam.findUnique({
+      where: { id: examId },
+      select: { id: true, examTitle: true, testCode: true }
+    });
+    
+    if (!exam) {
+      res.status(404).json({ error: 'Exam not found' });
+      return;
+    }
+    
+    const mpsData = await calculateExamMPS(examId);
+    
+    res.status(200).json({
+      exam: {
+        id: exam.id,
+        title: exam.examTitle,
+        testCode: exam.testCode
+      },
+      ...mpsData
+    });
+  } catch (error) {
+    console.error('Error calculating MPS:', error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
 export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin,  handleUpdateProfile,handleCreateExam,handleAnswerExam
   ,handleFetchExamQuestions, handleStartExam,handleStopExam, handleGetUserProfile,
   handleGetStudents,
@@ -722,5 +769,7 @@ export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, hand
   handleGetAllExams,
   handleImageUpload,
   handleGetAvailableSections,
-  handleGetStudentExamHistory
+  handleGetStudentExamHistory,
+  handleGetAllExamsForAdmin,
+  handleGetExamMPS
 };

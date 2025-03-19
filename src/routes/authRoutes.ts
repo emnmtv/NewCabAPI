@@ -34,7 +34,9 @@ import { handleAnswerExam,handleLogin,
     handleGetAllExams,
     handleImageUpload,
     handleGetAvailableSections,
-    handleGetStudentExamHistory
+    handleGetStudentExamHistory,
+    handleGetAllExamsForAdmin,
+    handleGetExamMPS
 } from '../controllers/authController';
 import { authenticateToken } from '../middleware/authMiddleware';
 
@@ -101,5 +103,11 @@ authRouter.get('/available-sections', authenticateToken, handleGetAvailableSecti
 
 // Add this new route
 authRouter.get('/student-exam-history', authenticateToken, handleGetStudentExamHistory);
+
+// Add this route for admin exam monitoring
+authRouter.get('/admin/exams', authenticateToken, handleGetAllExamsForAdmin);
+
+// Add this new route for MPS calculation
+authRouter.get('/exam/:examId/mps', authenticateToken, handleGetExamMPS);
 
 export { authRouter };
