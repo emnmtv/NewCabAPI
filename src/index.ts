@@ -12,6 +12,8 @@ const PORT = Number(process.env.PORT) || 3300;  // Ensuring it's a number
 // Create HTTP server
 const server = createServer(app);
 const io = new Server(server, {
+  path: '/socket.io',
+  transports: ['websocket', 'polling'],
   cors: {
     origin: "*", // Allow requests from this origin
     methods: ["GET", "POST"],
