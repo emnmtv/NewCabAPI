@@ -27,6 +27,10 @@ model User {
   exams        Exam[] // Add this line to define the relation to Exam
   scores       Score[]  // Add this line
   surveys      Survey[]    // Add surveys relation
+  subjects     TeacherSubject[] // Add this line
+  tasks        SubjectTask[]
+  submissions TaskSubmission[]
+  taskVisibility TaskVisibility[]
 }
 
 model Question {
@@ -152,5 +156,90 @@ model ExamAccess {
   @@unique([examId, grade, section])
 }
 
+model Subject {
+  id           Int               @id @default(autoincrement())
+  name         String
+  description  String?
+  code         String            @unique
+  scheduleType String?           // 'SINGLE', 'RANGE', 'MULTIPLE'
+  daysOfWeek   Json?             // Store the days as a JSON array
+  startTime    String?           // Store time as HH:mm format
+  endTime      String?           // Store time as HH:mm format
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  teachers     TeacherSubject[]
+  sections     SectionSubject[]
+  tasks        SubjectTask[]
+}
+
+model TeacherSubject {
+  id        Int      @id @default(autoincrement())
+  teacherId Int
+  subjectId Int
+  user      User     @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teacherId, subjectId])
+}
+
+model SectionSubject {
+  id        Int      @id @default(autoincrement())
+  grade     Int
+  section   String
+  subjectId Int
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([grade, section, subjectId])
+
+
+}
+
+model SubjectTask {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String?
+  dueDate     DateTime
+  totalScore  Int
+  subjectId   Int
+  teacherId   Int
+  fileUrl     String?   // For task attachments
+  fileName    String?   // Add this field for original filename
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  visibleTo   TaskVisibility[]
+  
+  subject     Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher     User      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  submissions TaskSubmission[]
+}
+
+model TaskSubmission {
+  id          Int      @id @default(autoincrement())
+  taskId      Int
+  studentId   Int
+  fileUrl     String?
+  fileName    String?  // Add this field
+  submittedAt DateTime @default(now())
+  score       Int?
+  comment     String?
+  
+  task        SubjectTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  student     User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+model TaskVisibility {
+  id        Int      @id @default(autoincrement())
+  taskId    Int
+  studentId Int      // Using student ID instead of LRN for foreign key relationship
+  task      SubjectTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([taskId, studentId])
+}
 
 

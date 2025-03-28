@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Submission Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, button {
+            padding: 8px;
+            width: 100%;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+            min-height: 100px;
+            white-space: pre-wrap;
+            overflow-wrap: break-word;
+        }
+        .error {
+            color: red;
+        }
+        .success {
+            color: green;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Task Submission Test</h1>
+        
+        <div class="form-group">
+            <label for="apiUrl">API Base URL:</label>
+            <input type="text" id="apiUrl" value="http://192.168.0.100:3300/auth" placeholder="Enter API base URL">
+        </div>
+        
+        <div class="form-group">
+            <label for="token">JWT Token:</label>
+            <input type="text" id="token" placeholder="Enter your JWT token">
+        </div>
+        
+        <div class="form-group">
+            <label for="taskId">Task ID:</label>
+            <input type="number" id="taskId" placeholder="Enter the task ID">
+        </div>
+        
+        <div class="form-group">
+            <label for="file">Attachment (optional):</label>
+            <input type="file" id="file">
+        </div>
+        
+        <button id="submitBtn">Submit Task</button>
+        
+        <div id="result">
+            <p>Response will appear here...</p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('submitBtn').addEventListener('click', async function() {
+            const apiUrl = document.getElementById('apiUrl').value.trim();
+            const token = document.getElementById('token').value.trim();
+            const taskId = document.getElementById('taskId').value.trim();
+            const fileInput = document.getElementById('file');
+            const resultDiv = document.getElementById('result');
+            
+            // Validate inputs
+            if (!apiUrl) {
+                resultDiv.innerHTML = '<p class="error">Please enter the API base URL</p>';
+                return;
+            }
+            
+            if (!token) {
+                resultDiv.innerHTML = '<p class="error">Please enter a JWT token</p>';
+                return;
+            }
+            
+            if (!taskId) {
+                resultDiv.innerHTML = '<p class="error">Please enter a task ID</p>';
+                return;
+            }
+            
+            // Create form data
+            const formData = new FormData();
+            if (fileInput.files.length > 0) {
+                formData.append('file', fileInput.files[0]);
+            }
+            
+            try {
+                resultDiv.innerHTML = '<p>Submitting task...</p>';
+                
+                // Construct the full URL
+                const url = `${apiUrl}/tasks/${taskId}/submit`;
+                console.log("Submitting to URL:", url);
+                
+                // Send the request
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData,
+                    mode: 'cors' // Explicitly request CORS
+                });
+                
+                // Check if response is JSON
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        resultDiv.innerHTML = `
+                            <p class="success">Task submitted successfully!</p>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        `;
+                    } else {
+                        resultDiv.innerHTML = `
+                            <p class="error">Error: ${data.error || 'Unknown error'}</p>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        `;
+                    }
+                } else {
+                    // Handle non-JSON response
+                    const text = await response.text();
+                    resultDiv.innerHTML = `
+                        <p class="error">Received non-JSON response (${response.status} ${response.statusText}):</p>
+                        <div>${text.substring(0, 1000)}${text.length > 1000 ? '...' : ''}</div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <p class="error">Network error: ${error.message}</p>
+                `;
+                console.error('Error:', error);
+            }
+        });
+    </script>
+</body>
+</html>

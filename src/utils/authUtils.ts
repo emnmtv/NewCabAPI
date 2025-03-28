@@ -1402,6 +1402,279 @@ const calculateExamMPS = async (examId: number) => {
   };
 };
 
+/**
+ * Create a new subject
+ */
+const createSubject = async (
+  name: string,
+  code: string,
+  description?: string
+) => {
+  // Check if code already exists
+  const existingSubject = await prisma.subject.findUnique({
+    where: { code }
+  });
+
+  if (existingSubject) {
+    throw new Error('Subject code already exists. Please choose a different code.');
+  }
+
+  return await prisma.subject.create({
+    data: {
+      name,
+      code,
+      description
+    }
+  });
+};
+
+/**
+ * Update an existing subject
+ */
+const updateSubject = async (
+  id: number,
+  data: {
+    name?: string;
+    code?: string;
+    description?: string;
+  }
+) => {
+  // If code is being changed, check that it's unique
+  if (data.code) {
+    const existingSubject = await prisma.subject.findUnique({
+      where: { code: data.code }
+    });
+
+    if (existingSubject && existingSubject.id !== id) {
+      throw new Error('Subject code already exists. Please choose a different code.');
+    }
+  }
+
+  return await prisma.subject.update({
+    where: { id },
+    data
+  });
+};
+
+/**
+ * Delete a subject
+ */
+const deleteSubject = async (id: number) => {
+  return await prisma.subject.delete({
+    where: { id }
+  });
+};
+
+/**
+ * Get all subjects
+ */
+const getAllSubjects = async () => {
+  return await prisma.subject.findMany({
+    include: {
+      teachers: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true
+            }
+          }
+        }
+      },
+      sections: true
+    },
+    orderBy: {
+      name: 'asc'
+    }
+  });
+};
+
+/**
+ * Get a specific subject
+ */
+const getSubjectById = async (id: number) => {
+  return await prisma.subject.findUnique({
+    where: { id },
+    include: {
+      teachers: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true
+            }
+          }
+        }
+      },
+      sections: true
+    }
+  });
+};
+
+/**
+ * Assign a teacher to a subject
+ */
+const assignTeacherToSubject = async (teacherId: number, subjectId: number) => {
+  // First check if the teacher exists and is actually a teacher
+  const teacher = await prisma.user.findUnique({
+    where: { id: teacherId }
+  });
+
+  if (!teacher) {
+    throw new Error('Teacher not found');
+  }
+
+  if (teacher.role !== 'teacher') {
+    throw new Error('User is not a teacher');
+  }
+
+  // Check if the subject exists
+  const subject = await prisma.subject.findUnique({
+    where: { id: subjectId }
+  });
+
+  if (!subject) {
+    throw new Error('Subject not found');
+  }
+
+  // Create the assignment
+  return await prisma.teacherSubject.upsert({
+    where: {
+      teacherId_subjectId: {
+        teacherId,
+        subjectId
+      }
+    },
+    update: {}, // No updates if it already exists
+    create: {
+      teacherId,
+      subjectId
+    }
+  });
+};
+
+/**
+ * Remove a teacher from a subject
+ */
+const removeTeacherFromSubject = async (teacherId: number, subjectId: number) => {
+  return await prisma.teacherSubject.delete({
+    where: {
+      teacherId_subjectId: {
+        teacherId,
+        subjectId
+      }
+    }
+  });
+};
+
+/**
+ * Assign a subject to a grade and section
+ */
+const assignSubjectToSection = async (grade: number, section: string, subjectId: number) => {
+  // Check if the subject exists
+  const subject = await prisma.subject.findUnique({
+    where: { id: subjectId }
+  });
+
+  if (!subject) {
+    throw new Error('Subject not found');
+  }
+
+  // Check if the grade-section exists
+  const gradeSection = await prisma.gradeSection.findFirst({
+    where: {
+      grade,
+      section
+    }
+  });
+
+  if (!gradeSection) {
+    throw new Error('Grade section not found');
+  }
+
+  // Create the assignment
+  return await prisma.sectionSubject.upsert({
+    where: {
+      grade_section_subjectId: {
+        grade,
+        section,
+        subjectId
+      }
+    },
+    update: {}, // No updates if it already exists
+    create: {
+      grade,
+      section,
+      subjectId
+    }
+  });
+};
+
+/**
+ * Remove a subject from a grade and section
+ */
+const removeSubjectFromSection = async (grade: number, section: string, subjectId: number) => {
+  return await prisma.sectionSubject.delete({
+    where: {
+      grade_section_subjectId: {
+        grade,
+        section,
+        subjectId
+      }
+    }
+  });
+};
+
+/**
+ * Get subjects assigned to a teacher
+ */
+const getTeacherSubjects = async (teacherId: number) => {
+  return await prisma.teacherSubject.findMany({
+    where: {
+      teacherId
+    },
+    include: {
+      subject: true
+    }
+  });
+};
+
+/**
+ * Get subjects assigned to a grade and section
+ */
+const getSectionSubjects = async (grade: number, section: string) => {
+  return await prisma.sectionSubject.findMany({
+    where: {
+      grade,
+      section
+    },
+    include: {
+      subject: {
+        include: {
+          teachers: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+};
+
+
+
+
 export { registerAdmin, registerStudent, 
   registerTeacher, loginUser,  
   updateUserProfile, prisma,QuestionType,
@@ -1432,5 +1705,16 @@ export { registerAdmin, registerStudent,
   checkExamAccess,
   fetchStudentExamHistory,
   fetchAllExamsForAdmin,
-  calculateExamMPS
+  calculateExamMPS,
+  createSubject,
+  updateSubject,
+  deleteSubject,
+  getAllSubjects,
+  getSubjectById,
+  assignTeacherToSubject,
+  removeTeacherFromSubject,
+  assignSubjectToSection,
+  removeSubjectFromSection,
+  getTeacherSubjects,
+  getSectionSubjects
 };

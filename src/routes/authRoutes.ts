@@ -36,9 +36,38 @@ import { handleAnswerExam,handleLogin,
     handleGetAvailableSections,
     handleGetStudentExamHistory,
     handleGetAllExamsForAdmin,
-    handleGetExamMPS
+    handleGetExamMPS,
+    handleCreateSubject,
+    handleGetAllSubjects,
+    handleGetSubjectById,
+    handleUpdateSubject,
+    handleDeleteSubject,
+    handleAssignTeacherToSubject,
+    handleRemoveTeacherFromSubject,
+    handleGetTeacherSubjects,
+    handleAssignSubjectToSection,
+    handleRemoveSubjectFromSection,
+    handleGetSectionSubjects,
+    handleUpdateSubjectSchedule,
+    handleGetTeacherAssignedSubjects,
+    handleGetStudentSubjects,
+    handleCreateSubjectTask,
+    handleGetSubjectTasks,
+    handleSubmitTask,
+    handleGetStudentTaskSubmissions,
+    handleScoreSubmission,
+    handleAddTaskVisibility,
+    handleRemoveTaskVisibility,
+    handleGetTaskVisibility,
+    handleGetStudentsBySection,
+    handleDeleteSubjectTask,
+    handleGetSubjectSections,
+    handleGetStudentTasks,
+    handleGetStudentTaskDetails,
+    handleEditSubmission
 } from '../controllers/authController';
 import { authenticateToken } from '../middleware/authMiddleware';
+import { upload } from '../middleware/fileMiddleware';
 
 const authRouter = express.Router();
 
@@ -109,5 +138,61 @@ authRouter.get('/admin/exams', authenticateToken, handleGetAllExamsForAdmin);
 
 // Add this new route for MPS calculation
 authRouter.get('/exam/:examId/mps', authenticateToken, handleGetExamMPS);
+
+// Subject routes
+authRouter.post('/subjects', authenticateToken, handleCreateSubject);
+authRouter.get('/subjects', authenticateToken, handleGetAllSubjects);
+authRouter.get('/subjects/:id', authenticateToken, handleGetSubjectById);
+authRouter.put('/subjects/:id', authenticateToken, handleUpdateSubject);
+authRouter.delete('/subjects/:id', authenticateToken, handleDeleteSubject);
+
+// Teacher-Subject assignment routes
+authRouter.post('/teacher-subject', authenticateToken, handleAssignTeacherToSubject);
+authRouter.delete('/teacher-subject/:teacherId/:subjectId', authenticateToken, handleRemoveTeacherFromSubject);
+authRouter.get('/teacher/:teacherId/subjects', authenticateToken, handleGetTeacherSubjects);
+
+// Section-Subject assignment routes
+authRouter.post('/section-subject', authenticateToken, handleAssignSubjectToSection);
+authRouter.delete('/section-subject/:grade/:section/:subjectId', authenticateToken, handleRemoveSubjectFromSection);
+authRouter.get('/section/:grade/:section/subjects', authenticateToken, handleGetSectionSubjects);
+
+// Replace schedule routes with this single route
+authRouter.put('/subjects/:subjectId/schedule', authenticateToken, handleUpdateSubjectSchedule);
+
+// Add these new routes
+authRouter.get('/teacher/subjects/assigned', authenticateToken, handleGetTeacherAssignedSubjects);
+authRouter.get('/student/subjects', authenticateToken, handleGetStudentSubjects);
+
+// Task routes
+authRouter.post('/subjects/:subjectId/tasks', authenticateToken,  upload.single('file'),handleCreateSubjectTask);
+authRouter.get('/subjects/:subjectId/tasks', authenticateToken, handleGetSubjectTasks);
+authRouter.post('/tasks/:taskId/submit',authenticateToken,upload.single('file'),handleSubmitTask);
+authRouter.get('/tasks/:taskId/submissions',authenticateToken,handleGetStudentTaskSubmissions);
+authRouter.put('/submissions/:submissionId/score',authenticateToken,handleScoreSubmission);
+
+// Add these new routes for task visibility
+authRouter.post('/tasks/:taskId/visibility', authenticateToken, handleAddTaskVisibility);
+authRouter.delete('/tasks/:taskId/visibility', authenticateToken, handleRemoveTaskVisibility);
+authRouter.get('/tasks/:taskId/visibility', authenticateToken, handleGetTaskVisibility);
+
+// Add this route
+authRouter.get('/students/grade/:grade/section/:section', authenticateToken, handleGetStudentsBySection);
+
+// Add this route
+authRouter.delete('/tasks/:taskId', authenticateToken, handleDeleteSubjectTask);
+
+// Add this route
+authRouter.get('/subjects/:subjectId/sections', authenticateToken, handleGetSubjectSections);
+
+// Add these routes
+authRouter.get('/student/tasks', authenticateToken, handleGetStudentTasks);
+authRouter.get('/student/tasks/:taskId', authenticateToken, handleGetStudentTaskDetails);
+
+// Add this route
+authRouter.put('/submissions/:submissionId', 
+  authenticateToken, 
+  upload.single('file'), 
+  handleEditSubmission
+);
 
 export { authRouter };
