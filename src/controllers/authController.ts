@@ -1026,9 +1026,12 @@ export const handleCreateSubjectTask = async (req: AuthRequest, res: Response) =
     const { subjectId } = req.params;
     const { title, description, dueDate, totalScore, studentLRNs } = req.body;
     
-    // Get the original filename from the uploaded file
-    const fileName = req.file ? req.file.originalname : undefined;
-    const fileUrl = req.file ? `/${req.file.path.replace(/\\/g, '/')}` : undefined;
+    // Handle multiple files
+    const files = req.files as Express.Multer.File[];
+    const fileData = files ? files.map(file => ({
+      fileUrl: `/${file.path.replace(/\\/g, '/')}`,
+      fileName: file.originalname
+    })) : [];
 
     // Parse studentLRNs from JSON string if it's a string
     let parsedStudentLRNs = studentLRNs;
@@ -1041,7 +1044,7 @@ export const handleCreateSubjectTask = async (req: AuthRequest, res: Response) =
       }
     }
 
-    // Create the task
+    // Create the task with files
     const task = await prisma.subjectTask.create({
       data: {
         title,
@@ -1050,14 +1053,18 @@ export const handleCreateSubjectTask = async (req: AuthRequest, res: Response) =
         totalScore: parseInt(totalScore),
         subjectId: parseInt(subjectId),
         teacherId,
-        fileUrl,
-        fileName
+        files: {
+          create: fileData
+          
+        }
+      },
+      include: {
+        files: true
       }
     });
 
     // If studentLRNs were provided, set up initial visibility
     if (parsedStudentLRNs && Array.isArray(parsedStudentLRNs) && parsedStudentLRNs.length > 0) {
-      // Get students by their LRNs
       const students = await prisma.user.findMany({
         where: {
           lrn: {
@@ -1116,6 +1123,7 @@ export const handleGetSubjectTasks = async (req: AuthRequest, res: Response) => 
         subjectId: parseInt(subjectId)
       },
       include: {
+        files: true,
         teacher: {
           select: {
             firstName: true,
@@ -1128,6 +1136,7 @@ export const handleGetSubjectTasks = async (req: AuthRequest, res: Response) => 
             studentId: true,
             score: true,
             submittedAt: true,
+            files: true,
             student: {
               select: {
                 firstName: true,
@@ -1159,9 +1168,30 @@ export const handleSubmitTask = async (req: AuthRequest, res: Response) => {
     
     const { taskId } = req.params;
     
-    // Get the original filename from the uploaded file
-    const fileName = req.file ? req.file.originalname : undefined;
-    const fileUrl = req.file ? `/${req.file.path.replace(/\\/g, '/')}` : undefined;
+    // Check if student has visibility to this task
+    const visibility = await prisma.taskVisibility.findFirst({
+      where: {
+        studentId,
+        taskId: parseInt(taskId)
+      }
+    });
+    
+    if (!visibility) {
+      res.status(403).json({ error: 'You do not have access to this task' });
+      return;
+    }
+    
+    // Check if task exists
+    const task = await prisma.subjectTask.findUnique({
+      where: {
+        id: parseInt(taskId)
+      }
+    });
+    
+    if (!task) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
     
     // Check if student already submitted
     const existingSubmission = await prisma.taskSubmission.findFirst({
@@ -1171,40 +1201,43 @@ export const handleSubmitTask = async (req: AuthRequest, res: Response) => {
       }
     });
     
-    let submission;
-    
     if (existingSubmission) {
-      // Update existing submission
-      submission = await prisma.taskSubmission.update({
-        where: {
-          id: existingSubmission.id
-        },
-        data: {
-          fileUrl,
-          fileName,
-          submittedAt: new Date()
-        }
-      });
-    } else {
-      // Create new submission
-      submission = await prisma.taskSubmission.create({
-        data: {
-          taskId: parseInt(taskId),
-          studentId,
-          fileUrl,
-          fileName,
-          submittedAt: new Date()
-        }
-      });
+      res.status(400).json({ error: 'You have already submitted this task. Use edit submission instead.' });
+      return;
     }
     
-    res.status(200).json({ 
-      message: 'Task submitted successfully',
-      submission
+    // Process uploaded files
+    const files = req.files as Express.Multer.File[];
+    
+    if (!files || files.length === 0) {
+      res.status(400).json({ error: 'No files uploaded' });
+      return;
+    }
+    
+    // Create file data for database with correct path format
+    const fileData = files.map(file => ({
+      fileName: file.originalname,
+      fileUrl: '/' + file.path.replace(/\\/g, '/') // Add leading slash and normalize path
+    }));
+    
+    // Create submission with files
+    const submission = await prisma.taskSubmission.create({
+      data: {
+        taskId: parseInt(taskId),
+        studentId,
+        files: {
+          create: fileData
+        }
+      },
+      include: {
+        files: true
+      }
     });
+    
+    res.status(201).json({ submission });
   } catch (error) {
     console.error('Error submitting task:', error);
-    res.status(400).json({ error: (error as Error).message });
+    res.status(500).json({ error: (error as Error).message });
   }
 };
 
@@ -1223,7 +1256,8 @@ export const handleGetStudentTaskSubmissions = async (req: AuthRequest, res: Res
             firstName: true,
             lastName: true
           }
-        }
+        },
+        files: true
       }
     });
 
@@ -1414,6 +1448,14 @@ export const handleDeleteSubjectTask = async (req: AuthRequest, res: Response) =
       where: {
         id: parseInt(taskId),
         teacherId
+      },
+      include: {
+        files: true,
+        submissions: {
+          include: {
+            files: true
+          }
+        }
       }
     });
     
@@ -1422,21 +1464,36 @@ export const handleDeleteSubjectTask = async (req: AuthRequest, res: Response) =
       return;
     }
     
-    // Delete all task visibility records
-    await prisma.taskVisibility.deleteMany({
-      where: {
-        taskId: parseInt(taskId)
+    // Delete all physical files from storage
+    const deleteFileFromStorage = async (fileUrl: string) => {
+      try {
+        // Remove leading slash if present
+        const normalizedPath = fileUrl.startsWith('/') ? fileUrl.substring(1) : fileUrl;
+        const filePath = path.join(process.cwd(), normalizedPath);
+        
+        if (fs.existsSync(filePath)) {
+          await fs.promises.unlink(filePath);
+          console.log(`Deleted file: ${filePath}`);
+        }
+      } catch (error) {
+        console.error(`Error deleting file ${fileUrl}:`, error);
+        // Continue with deletion even if file removal fails
       }
-    });
+    };
     
-    // Delete all task submissions
-    await prisma.taskSubmission.deleteMany({
-      where: {
-        taskId: parseInt(taskId)
+    // Delete task files
+    for (const file of task.files) {
+      await deleteFileFromStorage(file.fileUrl);
+    }
+    
+    // Delete submission files
+    for (const submission of task.submissions) {
+      for (const file of submission.files) {
+        await deleteFileFromStorage(file.fileUrl);
       }
-    });
+    }
     
-    // Delete the task
+    // Delete the task and all related records using cascading delete
     await prisma.subjectTask.delete({
       where: {
         id: parseInt(taskId)
@@ -1446,7 +1503,7 @@ export const handleDeleteSubjectTask = async (req: AuthRequest, res: Response) =
     res.status(200).json({ message: 'Task deleted successfully' });
   } catch (error) {
     console.error('Error deleting task:', error);
-    res.status(400).json({ error: (error as Error).message });
+    res.status(500).json({ error: (error as Error).message });
   }
 };
 
@@ -1488,6 +1545,7 @@ export const handleGetStudentTasks = async (req: AuthRequest, res: Response) => 
       include: {
         task: {
           include: {
+            files: true,
             subject: {
               select: {
                 id: true,
@@ -1505,6 +1563,9 @@ export const handleGetStudentTasks = async (req: AuthRequest, res: Response) => 
             submissions: {
               where: {
                 studentId
+              },
+              include: {
+                files: true
               }
             }
           }
@@ -1526,13 +1587,11 @@ export const handleGetStudentTasks = async (req: AuthRequest, res: Response) => 
         totalScore: task.totalScore,
         subject: task.subject,
         teacher: task.teacher,
-        fileUrl: task.fileUrl,
-        fileName: task.fileName,
+        files: task.files,
         createdAt: task.createdAt,
         submission: hasSubmitted && submission ? {
           id: submission.id,
-          fileUrl: submission.fileUrl,
-          fileName: submission.fileName,
+          files: submission.files,
           submittedAt: submission.submittedAt,
           score: submission.score,
           comment: submission.comment
@@ -1561,11 +1620,10 @@ export const handleGetStudentTaskDetails = async (req: AuthRequest, res: Respons
     // Check if student has visibility to this task
     const visibility = await prisma.taskVisibility.findFirst({
       where: {
-        taskId: parseInt(taskId),
-        studentId
+        studentId: studentId, // Use the already checked studentId variable
+        taskId: parseInt(taskId)
       }
     });
-    
     if (!visibility) {
       res.status(403).json({ error: 'You do not have access to this task' });
       return;
@@ -1577,6 +1635,7 @@ export const handleGetStudentTaskDetails = async (req: AuthRequest, res: Respons
         id: parseInt(taskId)
       },
       include: {
+        files: true,
         subject: {
           select: {
             id: true,
@@ -1594,6 +1653,9 @@ export const handleGetStudentTaskDetails = async (req: AuthRequest, res: Respons
         submissions: {
           where: {
             studentId
+          },
+          include: {
+            files: true
           }
         }
       }
@@ -1616,13 +1678,11 @@ export const handleGetStudentTaskDetails = async (req: AuthRequest, res: Respons
       totalScore: task.totalScore,
       subject: task.subject,
       teacher: task.teacher,
-      fileUrl: task.fileUrl,
-      fileName: task.fileName,
+      files: task.files,
       createdAt: task.createdAt,
       submission: hasSubmitted && submission ? {
         id: submission.id,
-        fileUrl: submission.fileUrl,
-        fileName: submission.fileName,
+        files: submission.files,
         submittedAt: submission.submittedAt,
         score: submission.score,
         comment: submission.comment
@@ -1636,56 +1696,63 @@ export const handleGetStudentTaskDetails = async (req: AuthRequest, res: Respons
   }
 };
 
-// Update handleEditSubmission to handle file removal
+// Update handleEditSubmission to handle multiple files
 export const handleEditSubmission = async (req: AuthRequest, res: Response) => {
   try {
-    const submissionId = parseInt(req.params.submissionId);
     const studentId = req.user?.userId;
-    const file = req.file;
-
-    if (!submissionId || !studentId) {
-       res.status(400).json({ error: 'Missing required parameters' });
-       return;
+    if (!studentId) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
     }
-
+    
+    const { submissionId } = req.params;
+    
     // Check if submission exists and belongs to student
     const existingSubmission = await prisma.taskSubmission.findFirst({
       where: {
-        id: submissionId,
-        studentId: studentId
+        id: parseInt(submissionId),
+        studentId
       },
       include: {
-        task: true
+        files: true
       }
     });
-
+    
     if (!existingSubmission) {
-       res.status(404).json({ error: 'Submission not found' });
-       return;
+      res.status(404).json({ error: 'Submission not found or does not belong to you' });
+      return;
     }
-
-    // Delete old file if it exists
-    if (existingSubmission.fileUrl) {
-      const oldFilePath = path.join(__dirname, '../../', existingSubmission.fileUrl);
-      try {
-        await fs.promises.unlink(oldFilePath);
-      } catch (error) {
-        console.error('Error deleting old file:', error);
-      }
+    
+    // Process uploaded files
+    const files = req.files as Express.Multer.File[];
+    
+    if (!files || files.length === 0) {
+      res.status(400).json({ error: 'No files uploaded' });
+      return;
     }
-
-    // Update submission - if no new file, clear file fields
+    
+    // Create file data for database with correct path format
+    const fileData = files.map(file => ({
+      fileName: file.originalname,
+      fileUrl: '/' + file.path.replace(/\\/g, '/') // Add leading slash and normalize path
+    }));
+    
+    // Update submission with new files
     const updatedSubmission = await prisma.taskSubmission.update({
       where: {
-        id: submissionId
+        id: parseInt(submissionId)
       },
       data: {
-        fileUrl: file ? `/uploads/tasks/${existingSubmission.task.id}/${file.filename}` : null,
-        fileName: file ? file.originalname : null,
+        files: {
+          create: fileData
+        },
         submittedAt: new Date()
+      },
+      include: {
+        files: true
       }
     });
-
+    
     res.status(200).json({ submission: updatedSubmission });
   } catch (error) {
     console.error('Error editing submission:', error);
@@ -1693,7 +1760,74 @@ export const handleEditSubmission = async (req: AuthRequest, res: Response) => {
   }
 }
 
- 
+// Add this function to handle file deletion
+export const handleDeleteFile = async (req: AuthRequest, res: Response) => {
+  try {
+    const { fileId } = req.params;
+    const userId = req.user?.userId;
+    
+    if (!userId) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+    
+    // Find the file
+    const file = await prisma.taskFile.findUnique({
+      where: {
+        id: parseInt(fileId)
+      },
+      include: {
+        submission: true
+      }
+    });
+    
+    if (!file) {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+    
+    // Check if the user owns the file (either as a student or teacher)
+    if (file.submission && file.submission.studentId !== userId) {
+      // Check if the user is a teacher who created the task
+      const isTeacherTask = await prisma.taskFile.findFirst({
+        where: {
+          id: parseInt(fileId),
+          task: {
+            teacherId: userId
+          }
+        }
+      });
+      
+      if (!isTeacherTask) {
+        res.status(403).json({ error: 'You do not have permission to delete this file' });
+        return;
+      }
+    }
+    
+    // Delete the file from storage if it exists
+    try {
+      const filePath = path.join(process.cwd(), file.fileUrl);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (error) {
+      console.error('Error deleting file from storage:', error);
+      // Continue with database deletion even if file removal fails
+    }
+    
+    // Delete the file from the database
+    await prisma.taskFile.delete({
+      where: {
+        id: parseInt(fileId)
+      }
+    });
+    
+    res.status(200).json({ message: 'File deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting file:', error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
 
 export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin,  handleUpdateProfile,handleCreateExam,handleAnswerExam
   ,handleFetchExamQuestions, handleStartExam,handleStopExam, handleGetUserProfile,

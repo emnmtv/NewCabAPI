@@ -206,11 +206,10 @@ model SubjectTask {
   totalScore  Int
   subjectId   Int
   teacherId   Int
-  fileUrl     String?   // For task attachments
-  fileName    String?   // Add this field for original filename
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   visibleTo   TaskVisibility[]
+  files       TaskFile[]
   
   subject     Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   teacher     User      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
@@ -218,14 +217,13 @@ model SubjectTask {
 }
 
 model TaskSubmission {
-  id          Int      @id @default(autoincrement())
+  id          Int        @id @default(autoincrement())
   taskId      Int
   studentId   Int
-  fileUrl     String?
-  fileName    String?  // Add this field
-  submittedAt DateTime @default(now())
+  submittedAt DateTime   @default(now())
   score       Int?
   comment     String?
+  files       TaskFile[]
   
   task        SubjectTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
   student     User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -240,6 +238,17 @@ model TaskVisibility {
   createdAt DateTime @default(now())
 
   @@unique([taskId, studentId])
+}
+
+model TaskFile {
+  id           Int            @id @default(autoincrement())
+  fileUrl      String
+  fileName     String
+  taskId       Int?
+  submissionId Int?
+  task         SubjectTask?   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  submission   TaskSubmission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime       @default(now())
 }
 
 

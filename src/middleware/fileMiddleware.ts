@@ -9,8 +9,14 @@ const storage = multer.diskStorage({
     const userId = (req as any).user?.userId;
     const type = req.body.uploadType || 'tasks'; // 'tasks' or 'submissions'
     
-    // Create directory structure: uploads/type/userId
-    const uploadDir = path.join('uploads', type, userId.toString());
+    // For student submissions, use their LRN if available
+    let uploadDir;
+    if (type === 'submissions' && req.user?.role === 'student') {
+      // Get student LRN from database if needed
+      uploadDir = path.join('uploads', type, userId.toString());
+    } else {
+      uploadDir = path.join('uploads', type, userId.toString());
+    }
     
     // Create directories if they don't exist
     fs.mkdirSync(uploadDir, { recursive: true });
@@ -27,9 +33,8 @@ const storage = multer.diskStorage({
 
 // File filter to allow specific file types
 const fileFilter = (_req: any, _file: any, cb: any) => {
-  
-   cb(null,true);
-
+  // Accept all file types for now
+  cb(null, true);
 };
 
 // Create multer upload instance
@@ -37,6 +42,6 @@ export const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 300 * 1024 * 1024 // 5MB limit
+    fileSize: 300 * 1024 * 1024 // 300MB limit
   }
 }); 

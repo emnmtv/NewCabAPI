@@ -64,7 +64,8 @@ import { handleAnswerExam,handleLogin,
     handleGetSubjectSections,
     handleGetStudentTasks,
     handleGetStudentTaskDetails,
-    handleEditSubmission
+    handleEditSubmission,
+    handleDeleteFile
 } from '../controllers/authController';
 import { authenticateToken } from '../middleware/authMiddleware';
 import { upload } from '../middleware/fileMiddleware';
@@ -164,9 +165,9 @@ authRouter.get('/teacher/subjects/assigned', authenticateToken, handleGetTeacher
 authRouter.get('/student/subjects', authenticateToken, handleGetStudentSubjects);
 
 // Task routes
-authRouter.post('/subjects/:subjectId/tasks', authenticateToken,  upload.single('file'),handleCreateSubjectTask);
+authRouter.post('/subjects/:subjectId/tasks', authenticateToken, upload.array('files', 10), handleCreateSubjectTask);
 authRouter.get('/subjects/:subjectId/tasks', authenticateToken, handleGetSubjectTasks);
-authRouter.post('/tasks/:taskId/submit',authenticateToken,upload.single('file'),handleSubmitTask);
+authRouter.post('/tasks/:taskId/submit', authenticateToken, upload.array('files', 10), handleSubmitTask);
 authRouter.get('/tasks/:taskId/submissions',authenticateToken,handleGetStudentTaskSubmissions);
 authRouter.put('/submissions/:submissionId/score',authenticateToken,handleScoreSubmission);
 
@@ -191,8 +192,11 @@ authRouter.get('/student/tasks/:taskId', authenticateToken, handleGetStudentTask
 // Add this route
 authRouter.put('/submissions/:submissionId', 
   authenticateToken, 
-  upload.single('file'), 
+  upload.array('files', 10), 
   handleEditSubmission
 );
+
+// Add this route for file deletion
+authRouter.delete('/files/:fileId', authenticateToken, handleDeleteFile);
 
 export { authRouter };
