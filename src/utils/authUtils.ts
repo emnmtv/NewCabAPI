@@ -1672,8 +1672,604 @@ const getSectionSubjects = async (grade: number, section: string) => {
   });
 };
 
+/**
+ * Get detailed exam answers for a student
+ */
+const getStudentExamAnswers = async (examId: number, studentId: number) => {
+  // Get the exam details first
+  const exam = await prisma.exam.findUnique({
+    where: { id: examId },
+    include: {
+      questions: true,
+      user: {
+        select: {
+          firstName: true,
+          lastName: true
+        }
+      }
+    }
+  });
 
+  if (!exam) {
+    throw new Error('Exam not found');
+  }
 
+  // Get student details
+  const student = await prisma.user.findUnique({
+    where: { id: studentId },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      gradeLevel: true,
+      section: true,
+      lrn: true
+    }
+  });
+
+  if (!student) {
+    throw new Error('Student not found');
+  }
+
+  // Get student's answers
+  const answers = await prisma.examAnswer.findMany({
+    where: {
+      examId,
+      userId: studentId
+    }
+  });
+
+  // Get student's score
+  const score = await prisma.score.findUnique({
+    where: {
+      userId_examId: {
+        userId: studentId,
+        examId
+      }
+    }
+  });
+
+  // Map answers to questions
+  const questionsWithAnswers = exam.questions.map(question => {
+    const answer = answers.find(a => a.questionId === question.id);
+    return {
+      questionId: question.id,
+      questionText: question.questionText,
+      questionType: question.questionType,
+      options: question.options,
+      correctAnswer: question.correctAnswer,
+      imageUrl: question.imageUrl,
+      userAnswer: answer?.userAnswer || null,
+      isCorrect: answer?.isCorrect || false,
+      answerId: answer?.id || null
+    };
+  });
+
+  return {
+    exam: {
+      id: exam.id,
+      testCode: exam.testCode,
+      examTitle: exam.examTitle,
+      teacher: exam.user
+    },
+    student,
+    score,
+    answers: questionsWithAnswers
+  };
+};
+
+/**
+ * Update a student's exam answer and recalculate score
+ */
+const updateStudentExamAnswer = async (
+  answerId: number,
+  isCorrect: boolean,
+  teacherId: number
+) => {
+  // First verify the answer exists
+  const answer = await prisma.examAnswer.findUnique({
+    where: { id: answerId },
+    include: {
+      exam: true
+    }
+  });
+
+  if (!answer) {
+    throw new Error('Answer not found');
+  }
+
+  // Verify the teacher owns this exam
+  if (answer.exam.userId !== teacherId) {
+    throw new Error('You do not have permission to modify this exam');
+  }
+
+  // Update the answer
+  const updatedAnswer = await prisma.examAnswer.update({
+    where: { id: answerId },
+    data: { isCorrect }
+  });
+
+  // Recalculate and update the score
+  const newScore = await calculateAndStoreScore(answer.userId, answer.examId);
+
+  return {
+    answer: updatedAnswer,
+    score: newScore
+  };
+};
+
+/**
+ * Manually update student's exam score
+ */
+const updateStudentExamScore = async (
+  examId: number,
+  studentId: number,
+  newScore: number,
+  teacherId: number
+) => {
+  // Verify the exam exists and belongs to the teacher
+  const exam = await prisma.exam.findFirst({
+    where: {
+      id: examId,
+      userId: teacherId
+    },
+    include: {
+      questions: true
+    }
+  });
+
+  if (!exam) {
+    throw new Error('Exam not found or you do not have permission to modify it');
+  }
+
+  // Verify the score is not greater than total questions
+  const totalQuestions = exam.questions.length;
+  if (newScore > totalQuestions) {
+    throw new Error(`Score cannot be greater than total questions (${totalQuestions})`);
+  }
+
+  // Calculate new percentage
+  const percentage = totalQuestions > 0 
+    ? Math.round((newScore / totalQuestions) * 100 * 10) / 10 
+    : 0;
+
+  // Update the score
+  const updatedScore = await prisma.score.upsert({
+    where: {
+      userId_examId: {
+        userId: studentId,
+        examId
+      }
+    },
+    update: {
+      score: newScore,
+      total: totalQuestions,
+      percentage,
+      submittedAt: new Date()
+    },
+    create: {
+      userId: studentId,
+      examId,
+      score: newScore,
+      total: totalQuestions,
+      percentage
+    }
+  });
+
+  return updatedScore;
+};
+
+/**
+ * Create a new question in the question bank
+ */
+const createQuestionBankItem = async (
+  teacherId: number,
+  data: {
+    questionText: string;
+    questionType: string;
+    options: any;
+    correctAnswer: string;
+    imageUrl?: string;
+    subject?: string;
+    folderId?: number;
+    difficulty: string;
+    sourceTestCode?: string;
+    sourceClassCode?: string;
+    sourceExamTitle?: string;
+  }
+) => {
+  // Verify the user is a teacher
+  const teacher = await prisma.user.findFirst({
+    where: {
+      id: teacherId,
+      role: 'teacher'
+    }
+  });
+
+  if (!teacher) {
+    throw new Error('Only teachers can add questions to the question bank');
+  }
+
+  // If folderId is provided, verify it exists and belongs to the teacher
+  if (data.folderId) {
+    const folder = await prisma.questionBankFolder.findFirst({
+      where: {
+        id: data.folderId,
+        createdBy: teacherId
+      }
+    });
+
+    if (!folder) {
+      throw new Error('Folder not found or you do not have permission to use it');
+    }
+  }
+
+  // Create the question
+  const question = await prisma.questionBank.create({
+    data: {
+      questionText: data.questionText,
+      questionType: data.questionType,
+      options: data.options,
+      correctAnswer: data.correctAnswer,
+      imageUrl: data.imageUrl,
+      subject: data.subject,
+      folderId: data.folderId,
+      difficulty: data.difficulty,
+      sourceTestCode: data.sourceTestCode,
+      sourceClassCode: data.sourceClassCode,
+      sourceExamTitle: data.sourceExamTitle,
+      createdBy: teacherId
+    },
+    include: {
+      folder: true,
+      user: {
+        select: {
+          firstName: true,
+          lastName: true
+        }
+      }
+    }
+  });
+
+  return question;
+};
+
+/**
+ * Get questions from the question bank with optional filters
+ */
+const getQuestionBankItems = async (
+  filters?: {
+    subject?: string;
+    difficulty?: string;
+    questionType?: string;
+    createdBy?: number;
+    folderId?: number;
+    searchQuery?: string;
+    sourceTestCode?: string;
+    sourceClassCode?: string;
+  }
+) => {
+  const where: any = {};
+
+  if (filters?.subject) {
+    where.subject = filters.subject;
+  }
+
+  if (filters?.difficulty) {
+    where.difficulty = filters.difficulty;
+  }
+
+  if (filters?.questionType) {
+    where.questionType = filters.questionType;
+  }
+
+  if (filters?.createdBy) {
+    where.createdBy = filters.createdBy;
+  }
+
+  if (filters?.folderId) {
+    where.folderId = filters.folderId;
+  }
+
+  if (filters?.sourceTestCode) {
+    where.sourceTestCode = filters.sourceTestCode;
+  }
+
+  if (filters?.sourceClassCode) {
+    where.sourceClassCode = filters.sourceClassCode;
+  }
+
+  if (filters?.searchQuery) {
+    where.OR = [
+      {
+        questionText: {
+          contains: filters.searchQuery
+        }
+      },
+      {
+        sourceExamTitle: {
+          contains: filters.searchQuery
+        }
+      },
+      {
+        sourceTestCode: {
+          contains: filters.searchQuery
+        }
+      },
+      {
+        sourceClassCode: {
+          contains: filters.searchQuery
+        }
+      }
+    ];
+  }
+
+  const questions = await prisma.questionBank.findMany({
+    where,
+    include: {
+      folder: true,
+      user: {
+        select: {
+          firstName: true,
+          lastName: true
+        }
+      }
+    },
+    orderBy: {
+      createdAt: 'desc'
+    }
+  });
+
+  return questions;
+};
+
+/**
+ * Update a question in the question bank
+ */
+const updateQuestionBankItem = async (
+  questionId: number,
+  teacherId: number,
+  data: {
+    questionText?: string;
+    questionType?: string;
+    options?: any;
+    correctAnswer?: string;
+    imageUrl?: string;
+    subject?: string;
+    folderId?: number;
+    difficulty?: string;
+    sourceTestCode?: string;
+    sourceClassCode?: string;
+    sourceExamTitle?: string;
+  }
+) => {
+  // Verify the question exists and belongs to the teacher
+  const question = await prisma.questionBank.findFirst({
+    where: {
+      id: questionId,
+      createdBy: teacherId
+    }
+  });
+
+  if (!question) {
+    throw new Error('Question not found or you do not have permission to edit it');
+  }
+
+  // If folderId is being changed, verify the new folder exists and belongs to the teacher
+  if (data.folderId) {
+    const folder = await prisma.questionBankFolder.findFirst({
+      where: {
+        id: data.folderId,
+        createdBy: teacherId
+      }
+    });
+
+    if (!folder) {
+      throw new Error('Folder not found or you do not have permission to use it');
+    }
+  }
+
+  // Update the question
+  const updatedQuestion = await prisma.questionBank.update({
+    where: { id: questionId },
+    data,
+    include: {
+      folder: true,
+      user: {
+        select: {
+          firstName: true,
+          lastName: true
+        }
+      }
+    }
+  });
+
+  return updatedQuestion;
+};
+
+/**
+ * Delete a question from the question bank
+ */
+const deleteQuestionBankItem = async (questionId: number, teacherId: number) => {
+  // Verify the question exists and belongs to the teacher
+  const question = await prisma.questionBank.findFirst({
+    where: {
+      id: questionId,
+      createdBy: teacherId
+    }
+  });
+
+  if (!question) {
+    throw new Error('Question not found or you do not have permission to delete it');
+  }
+
+  // Delete the question
+  await prisma.questionBank.delete({
+    where: { id: questionId }
+  });
+
+  return { success: true, message: 'Question deleted successfully' };
+};
+
+/**
+ * Create a new question bank folder
+ */
+const createQuestionBankFolder = async (
+  teacherId: number,
+  data: {
+    name: string;
+    description?: string;
+  }
+) => {
+  // Verify the user is a teacher
+  const teacher = await prisma.user.findFirst({
+    where: {
+      id: teacherId,
+      role: 'teacher'
+    }
+  });
+
+  if (!teacher) {
+    throw new Error('Only teachers can create question bank folders');
+  }
+
+  // Check if folder name already exists for this teacher
+  const existingFolder = await prisma.questionBankFolder.findFirst({
+    where: {
+      name: data.name,
+      createdBy: teacherId
+    }
+  });
+
+  if (existingFolder) {
+    throw new Error('A folder with this name already exists');
+  }
+
+  // Create the folder
+  const folder = await prisma.questionBankFolder.create({
+    data: {
+      ...data,
+      createdBy: teacherId
+    }
+  });
+
+  return folder;
+};
+
+/**
+ * Get question bank folders
+ */
+const getQuestionBankFolders = async (teacherId: number) => {
+  const folders = await prisma.questionBankFolder.findMany({
+    where: {
+      createdBy: teacherId
+    },
+    include: {
+      _count: {
+        select: {
+          questions: true
+        }
+      }
+    },
+    orderBy: {
+      createdAt: 'desc'
+    }
+  });
+
+  return folders;
+};
+
+/**
+ * Update a question bank folder
+ */
+const updateQuestionBankFolder = async (
+  folderId: number,
+  teacherId: number,
+  data: {
+    name?: string;
+    description?: string;
+  }
+) => {
+  // Verify the folder exists and belongs to the teacher
+  const folder = await prisma.questionBankFolder.findFirst({
+    where: {
+      id: folderId,
+      createdBy: teacherId
+    }
+  });
+
+  if (!folder) {
+    throw new Error('Folder not found or you do not have permission to edit it');
+  }
+
+  // If name is being changed, check it doesn't conflict
+  if (data.name && data.name !== folder.name) {
+    const existingFolder = await prisma.questionBankFolder.findFirst({
+      where: {
+        name: data.name,
+        createdBy: teacherId,
+        NOT: {
+          id: folderId
+        }
+      }
+    });
+
+    if (existingFolder) {
+      throw new Error('A folder with this name already exists');
+    }
+  }
+
+  // Update the folder
+  const updatedFolder = await prisma.questionBankFolder.update({
+    where: { id: folderId },
+    data,
+    include: {
+      _count: {
+        select: {
+          questions: true
+        }
+      }
+    }
+  });
+
+  return updatedFolder;
+};
+
+/**
+ * Delete a question bank folder
+ */
+const deleteQuestionBankFolder = async (folderId: number, teacherId: number) => {
+  // Verify the folder exists and belongs to the teacher
+  const folder = await prisma.questionBankFolder.findFirst({
+    where: {
+      id: folderId,
+      createdBy: teacherId
+    },
+    include: {
+      _count: {
+        select: {
+          questions: true
+        }
+      }
+    }
+  });
+
+  if (!folder) {
+    throw new Error('Folder not found or you do not have permission to delete it');
+  }
+
+  // Check if folder has questions
+  if (folder._count.questions > 0) {
+    throw new Error('Cannot delete folder that contains questions');
+  }
+
+  // Delete the folder
+  await prisma.questionBankFolder.delete({
+    where: { id: folderId }
+  });
+
+  return { success: true, message: 'Folder deleted successfully' };
+};
 
 export { registerAdmin, registerStudent, 
   registerTeacher, loginUser,  
@@ -1716,5 +2312,16 @@ export { registerAdmin, registerStudent,
   assignSubjectToSection,
   removeSubjectFromSection,
   getTeacherSubjects,
-  getSectionSubjects
+  getSectionSubjects,
+  getStudentExamAnswers,
+  updateStudentExamAnswer,
+  updateStudentExamScore,
+  createQuestionBankItem,
+  getQuestionBankItems,
+  updateQuestionBankItem,
+  deleteQuestionBankItem,
+  createQuestionBankFolder,
+  getQuestionBankFolders,
+  updateQuestionBankFolder,
+  deleteQuestionBankFolder
 };

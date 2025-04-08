@@ -65,7 +65,18 @@ import { handleAnswerExam,handleLogin,
     handleGetStudentTasks,
     handleGetStudentTaskDetails,
     handleEditSubmission,
-    handleDeleteFile
+    handleDeleteFile,
+    handleGetStudentExamAnswers,
+    handleUpdateStudentExamAnswer,
+    handleUpdateStudentExamScore,
+    handleCreateQuestionBankItem,
+    handleGetQuestionBankItems,
+    handleUpdateQuestionBankItem,
+    handleDeleteQuestionBankItem,
+    handleCreateQuestionBankFolder,
+    handleGetQuestionBankFolders,
+    handleUpdateQuestionBankFolder,
+    handleDeleteQuestionBankFolder
 } from '../controllers/authController';
 import { authenticateToken } from '../middleware/authMiddleware';
 import { upload } from '../middleware/fileMiddleware';
@@ -198,5 +209,22 @@ authRouter.put('/submissions/:submissionId',
 
 // Add this route for file deletion
 authRouter.delete('/files/:fileId', authenticateToken, handleDeleteFile);
+
+// Add these routes for exam answer management
+authRouter.get('/exam/:examId/student/:studentId/answers', authenticateToken, handleGetStudentExamAnswers);
+authRouter.put('/exam-answer/:answerId', authenticateToken, handleUpdateStudentExamAnswer);
+authRouter.put('/exam/:examId/student/:studentId/score', authenticateToken, handleUpdateStudentExamScore);
+
+// Add these routes for question bank
+authRouter.post('/question-bank', authenticateToken, handleCreateQuestionBankItem);
+authRouter.get('/question-bank', authenticateToken, handleGetQuestionBankItems);
+authRouter.put('/question-bank/:questionId', authenticateToken, handleUpdateQuestionBankItem);
+authRouter.delete('/question-bank/:questionId', authenticateToken, handleDeleteQuestionBankItem);
+
+// Add these routes for question bank folders
+authRouter.post('/question-bank/folders', authenticateToken, handleCreateQuestionBankFolder);
+authRouter.get('/question-bank/folders', authenticateToken, handleGetQuestionBankFolders);
+authRouter.put('/question-bank/folders/:folderId', authenticateToken, handleUpdateQuestionBankFolder);
+authRouter.delete('/question-bank/folders/:folderId', authenticateToken, handleDeleteQuestionBankFolder);
 
 export { authRouter };

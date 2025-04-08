@@ -31,6 +31,8 @@ model User {
   tasks        SubjectTask[]
   submissions TaskSubmission[]
   taskVisibility TaskVisibility[]
+  questionBank QuestionBank[]
+  questionBankFolders QuestionBankFolder[]
 }
 
 model Question {
@@ -249,6 +251,37 @@ model TaskFile {
   task         SubjectTask?   @relation(fields: [taskId], references: [id], onDelete: Cascade)
   submission   TaskSubmission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
   createdAt    DateTime       @default(now())
+}
+
+model QuestionBankFolder {
+  id            Int            @id @default(autoincrement())
+  name          String
+  description   String?
+  createdBy     Int
+  user          User          @relation(fields: [createdBy], references: [id])
+  questions     QuestionBank[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model QuestionBank {
+  id            Int      @id @default(autoincrement())
+  questionText  String
+  questionType  String
+  options       Json     // Store options as JSON array
+  correctAnswer String
+  imageUrl      String?  // Optional image URL
+  subject       String?  // Subject/topic this question belongs to
+  folderId      Int?     // Make it optional
+  folder        QuestionBankFolder? @relation(fields: [folderId], references: [id])
+  difficulty    String   // 'easy', 'medium', 'hard'
+  createdBy     Int      // Teacher who created the question
+  user          User     @relation(fields: [createdBy], references: [id])
+  sourceTestCode String? // Source exam test code
+  sourceClassCode String? // Source exam class code
+  sourceExamTitle String? // Source exam title
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 

@@ -8,7 +8,7 @@ import path from 'path';
 import { initGameSocket } from './sockets/gameSocket';
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3300;  // Ensuring it's a number
+const PORT = Number(process.env.PORT) || 3303;  // Ensuring it's a number
 
 // Create HTTP server
 const server = createServer(app);

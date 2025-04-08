@@ -40,6 +40,17 @@ import { fetchExamQuestions,answerExam,
   removeSubjectFromSection,
   getTeacherSubjects,
   getSectionSubjects,
+  getStudentExamAnswers,
+  updateStudentExamAnswer,
+  updateStudentExamScore,
+  createQuestionBankItem,
+  getQuestionBankItems,
+  updateQuestionBankItem,
+  deleteQuestionBankItem,
+  createQuestionBankFolder,
+  getQuestionBankFolders,
+  updateQuestionBankFolder,
+  deleteQuestionBankFolder
 } from '../utils/authUtils';
 import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
@@ -1829,6 +1840,219 @@ export const handleDeleteFile = async (req: AuthRequest, res: Response) => {
   }
 };
 
+/**
+ * Handler to get student's exam answers with details
+ */
+const handleGetStudentExamAnswers = async (req: AuthRequest, res: Response) => {
+  try {
+    const { examId, studentId } = req.params;
+    
+    const details = await getStudentExamAnswers(
+      parseInt(examId),
+      parseInt(studentId)
+    );
+    
+    res.status(200).json(details);
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to update a student's exam answer
+ */
+const handleUpdateStudentExamAnswer = async (req: AuthRequest, res: Response) => {
+  try {
+    const { answerId } = req.params;
+    const { isCorrect } = req.body;
+    const teacherId = req.user!.userId;
+
+    const result = await updateStudentExamAnswer(
+      parseInt(answerId),
+      isCorrect,
+      teacherId
+    );
+    
+    res.status(200).json({
+      message: 'Answer updated successfully',
+      ...result
+    });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to manually update student's exam score
+ */
+const handleUpdateStudentExamScore = async (req: AuthRequest, res: Response) => {
+  try {
+    const { examId, studentId } = req.params;
+    const { score } = req.body;
+    const teacherId = req.user!.userId;
+
+    const updatedScore = await updateStudentExamScore(
+      parseInt(examId),
+      parseInt(studentId),
+      score,
+      teacherId
+    );
+    
+    res.status(200).json({
+      message: 'Score updated successfully',
+      score: updatedScore
+    });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to create a new question bank item
+ */
+const handleCreateQuestionBankItem = async (req: AuthRequest, res: Response) => {
+  try {
+    const teacherId = req.user!.userId;
+    const questionData = req.body;
+
+    const question = await createQuestionBankItem(teacherId, questionData);
+    
+    res.status(201).json({
+      message: 'Question added to bank successfully',
+      question
+    });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to get question bank items with filters
+ */
+const handleGetQuestionBankItems = async (req: AuthRequest, res: Response) => {
+  try {
+    const filters = req.query;
+    const questions = await getQuestionBankItems(filters);
+    
+    res.status(200).json({ questions });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to update a question bank item
+ */
+const handleUpdateQuestionBankItem = async (req: AuthRequest, res: Response) => {
+  try {
+    const teacherId = req.user!.userId;
+    const { questionId } = req.params;
+    const updateData = req.body;
+
+    const question = await updateQuestionBankItem(
+      parseInt(questionId),
+      teacherId,
+      updateData
+    );
+    
+    res.status(200).json({
+      message: 'Question updated successfully',
+      question
+    });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to delete a question bank item
+ */
+const handleDeleteQuestionBankItem = async (req: AuthRequest, res: Response) => {
+  try {
+    const teacherId = req.user!.userId;
+    const { questionId } = req.params;
+
+    const result = await deleteQuestionBankItem(parseInt(questionId), teacherId);
+    
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to create a new question bank folder
+ */
+const handleCreateQuestionBankFolder = async (req: AuthRequest, res: Response) => {
+  try {
+    const teacherId = req.user!.userId;
+    const folderData = req.body;
+
+    const folder = await createQuestionBankFolder(teacherId, folderData);
+    
+    res.status(201).json({
+      message: 'Folder created successfully',
+      folder
+    });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to get question bank folders
+ */
+const handleGetQuestionBankFolders = async (req: AuthRequest, res: Response) => {
+  try {
+    const teacherId = req.user!.userId;
+    const folders = await getQuestionBankFolders(teacherId);
+    
+    res.status(200).json({ folders });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to update a question bank folder
+ */
+const handleUpdateQuestionBankFolder = async (req: AuthRequest, res: Response) => {
+  try {
+    const teacherId = req.user!.userId;
+    const { folderId } = req.params;
+    const updateData = req.body;
+
+    const folder = await updateQuestionBankFolder(
+      parseInt(folderId),
+      teacherId,
+      updateData
+    );
+    
+    res.status(200).json({
+      message: 'Folder updated successfully',
+      folder
+    });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to delete a question bank folder
+ */
+const handleDeleteQuestionBankFolder = async (req: AuthRequest, res: Response) => {
+  try {
+    const teacherId = req.user!.userId;
+    const { folderId } = req.params;
+
+    const result = await deleteQuestionBankFolder(parseInt(folderId), teacherId);
+    
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
 export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin,  handleUpdateProfile,handleCreateExam,handleAnswerExam
   ,handleFetchExamQuestions, handleStartExam,handleStopExam, handleGetUserProfile,
   handleGetStudents,
@@ -1873,5 +2097,15 @@ export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, hand
   handleUpdateSubjectSchedule,
   handleGetTeacherAssignedSubjects,
   handleGetStudentSubjects,
-
+  handleGetStudentExamAnswers,
+  handleUpdateStudentExamAnswer,
+  handleUpdateStudentExamScore,
+  handleCreateQuestionBankItem,
+  handleGetQuestionBankItems,
+  handleUpdateQuestionBankItem,
+  handleDeleteQuestionBankItem,
+  handleCreateQuestionBankFolder,
+  handleGetQuestionBankFolders,
+  handleUpdateQuestionBankFolder,
+  handleDeleteQuestionBankFolder
 };
