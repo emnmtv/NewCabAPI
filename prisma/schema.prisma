@@ -21,6 +21,7 @@ model User {
   section      String?  // Optional, for students only
   domain       String?  // Optional, for teachers only
   department   String?  // Optional, for teachers only
+  profilePicture String? // Optional profile picture URL
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   examAnswers  ExamAnswer[] // Relation to ExamAnswer

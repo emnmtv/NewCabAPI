@@ -50,7 +50,8 @@ import { fetchExamQuestions,answerExam,
   createQuestionBankFolder,
   getQuestionBankFolders,
   updateQuestionBankFolder,
-  deleteQuestionBankFolder
+  deleteQuestionBankFolder,
+  deleteProfilePicture
 } from '../utils/authUtils';
 import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
@@ -112,13 +113,67 @@ const handleLogin = async (req: AuthRequest, res: Response) => {
 // Update a user's profile
 const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
-  const { firstName, lastName, email, address, gradeLevel, section, domain, department, password } = req.body;
+  const { firstName, lastName, email, address, gradeLevel, section, domain, department, password, profilePicture } = req.body;
   
   try {
     // Validate password length if provided
     if (password && password.length < 8) {
       res.status(400).json({ error: 'Password must be at least 8 characters' });
-      return; // Just return without a value
+      return;
+    }
+    
+    let processedProfilePicture = profilePicture;
+    
+    // Check if a file was uploaded using multer
+    if (req.file) {
+      // Generate filename for the uploaded file
+      const originalFilename = req.file.originalname;
+      const extension = originalFilename.split('.').pop();
+      const filename = `profile_${userId}_${uuidv4()}.${extension}`;
+      
+      // Create uploads directory if it doesn't exist
+      const uploadsDir = path.join(__dirname, '../../uploads/profiles');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      
+      // Move the file from temp location to proper storage
+      const filepath = path.join(uploadsDir, filename);
+      fs.renameSync(req.file.path, filepath);
+      
+      // Set the URL for the profile picture
+      processedProfilePicture = `/uploads/profiles/${filename}`;
+    }
+    // Process profile picture if provided as base64
+    else if (profilePicture && profilePicture.startsWith('data:image')) {
+      // Extract the base64 data
+      const matches = profilePicture.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+      
+      if (!matches || matches.length !== 3) {
+        res.status(400).json({ error: 'Invalid image format' });
+        return;
+      }
+      
+      const imageType = matches[1];
+      const imageData = matches[2];
+      const buffer = Buffer.from(imageData, 'base64');
+      
+      // Generate a unique filename
+      const extension = imageType.split('/')[1];
+      const filename = `profile_${userId}_${uuidv4()}.${extension}`;
+      
+      // Create uploads directory if it doesn't exist
+      const uploadsDir = path.join(__dirname, '../../uploads/profiles');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      
+      // Save the file
+      const filepath = path.join(uploadsDir, filename);
+      fs.writeFileSync(filepath, buffer);
+      
+      // Set the URL for the profile picture
+      processedProfilePicture = `/uploads/profiles/${filename}`;
     }
     
     const updatedUser = await updateUserProfile(
@@ -131,7 +186,8 @@ const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
       section,
       domain,
       department,
-      password
+      password,
+      processedProfilePicture
     );
     res.status(200).json({ message: 'Profile updated successfully', updatedUser });
   } catch (error) {
@@ -2052,6 +2108,16 @@ const handleDeleteQuestionBankFolder = async (req: AuthRequest, res: Response) =
     res.status(400).json({ error: (error as Error).message });
   }
 };
+
+export const handleDeleteProfilePicture = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    await deleteProfilePicture(userId);
+    res.status(200).json({ message: 'Profile picture deleted successfully' });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+}
 
 export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin,  handleUpdateProfile,handleCreateExam,handleAnswerExam
   ,handleFetchExamQuestions, handleStartExam,handleStopExam, handleGetUserProfile,

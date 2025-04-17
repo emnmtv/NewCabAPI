@@ -5,6 +5,7 @@ export interface AuthRequest extends Request {
     userId: number;
     // Add additional properties here if needed
   };
+  file?: Express.Multer.File; // Add this for file uploads
 }
 
 

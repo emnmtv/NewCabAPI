@@ -162,7 +162,8 @@ const updateUserProfile = async (
   section?: string,
   domain?: string,
   department?: string,
-  password?: string
+  password?: string,
+  profilePicture?: string
 ) => {
   const updatedData: any = {};
 
@@ -174,6 +175,7 @@ const updateUserProfile = async (
   if (section) updatedData.section = section;
   if (domain) updatedData.domain = domain;
   if (department) updatedData.department = department;
+  if (profilePicture) updatedData.profilePicture = profilePicture;
   
   // If password is provided, hash it
   if (password) {
@@ -186,6 +188,14 @@ const updateUserProfile = async (
     data: updatedData,
   });
 };
+
+export const deleteProfilePicture = async (userId: number) => {
+  return await prisma.user.update({
+    where: { id: userId },
+    data: { profilePicture: null },
+  });
+};
+
 // Exam question type enumeration
 enum QuestionType {
   MULTIPLE_CHOICE = 'multiple_choice',
@@ -456,6 +466,7 @@ const fetchUserProfile = async (userId: number) => {
       address: true,
       role: true,
       lrn: true,
+      profilePicture: true,
       gradeLevel: true,
       section: true,
       domain: true,
@@ -492,6 +503,7 @@ const fetchStudentList = async () => {
       firstName: true,
       lastName: true,
       email: true,
+      profilePicture: true,
       lrn: true,
       gradeLevel: true,
       section: true,
@@ -518,6 +530,7 @@ const fetchTeacherList = async () => {
       firstName: true,
       lastName: true,
       email: true,
+      profilePicture: true,
       domain: true,
       department: true,
       createdAt: true
@@ -543,6 +556,7 @@ const fetchAdminList = async () => {
       firstName: true,
       lastName: true,
       email: true,
+      profilePicture: true,
       createdAt: true
     },
     orderBy: {
@@ -2270,6 +2284,8 @@ const deleteQuestionBankFolder = async (folderId: number, teacherId: number) => 
 
   return { success: true, message: 'Folder deleted successfully' };
 };
+
+
 
 export { registerAdmin, registerStudent, 
   registerTeacher, loginUser,  

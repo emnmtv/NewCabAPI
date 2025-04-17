@@ -76,7 +76,8 @@ import { handleAnswerExam,handleLogin,
     handleCreateQuestionBankFolder,
     handleGetQuestionBankFolders,
     handleUpdateQuestionBankFolder,
-    handleDeleteQuestionBankFolder
+    handleDeleteQuestionBankFolder,
+    handleDeleteProfilePicture
 } from '../controllers/authController';
 import { authenticateToken } from '../middleware/authMiddleware';
 import { upload } from '../middleware/fileMiddleware';
@@ -88,8 +89,9 @@ const authRouter = express.Router();
 authRouter.post('/login',handleLogin );
 
 
-
-authRouter.put('/profile', authenticateToken, handleUpdateProfile);
+// Update profile route to support both regular updates and file uploads
+authRouter.put('/profile', authenticateToken, upload.single('profilePicture'), handleUpdateProfile);
+authRouter.delete('/profile-picture', authenticateToken, handleDeleteProfilePicture);
 authRouter.get('/user-profile', authenticateToken, handleGetUserProfile);
 authRouter.post('/register-admin',authenticateToken,handleRegisterAdmin);
 authRouter.post('/register-student',authenticateToken, handleRegisterStudent );

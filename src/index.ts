@@ -8,7 +8,7 @@ import path from 'path';
 import { initGameSocket } from './sockets/gameSocket';
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3303;  // Ensuring it's a number
+const PORT = Number(process.env.PORT) || 3300;  // Ensuring it's a number
 
 // Create HTTP server
 const server = createServer(app);
@@ -91,6 +91,7 @@ io.on('connection', (socket: Socket) => {
           lastName: true,
           email: true,
           role: true,
+          profilePicture: true,
           gradeLevel: true,
           section: true,
           department: true,
@@ -183,6 +184,7 @@ io.on('connection', (socket: Socket) => {
         firstName: true,
         lastName: true,
         role: true, // Add role to the selection
+        profilePicture: true,
       },
     });
 
@@ -192,7 +194,7 @@ io.on('connection', (socket: Socket) => {
     }
 
     const userName = `${user.firstName} ${user.lastName}`;
-    
+    const profilePicture = user.profilePicture;
     // Track which exam this socket is in
     socketToExam.set(socket.id, testCode);
     
@@ -202,7 +204,7 @@ io.on('connection', (socket: Socket) => {
     }
     
     // Add the student to the exam
-    studentsInExam.get(testCode).set(socket.id, { userId, userName });
+    studentsInExam.get(testCode).set(socket.id, { userId, userName, profilePicture });
     
     // Join the socket room
     socket.join(testCode);
@@ -228,6 +230,7 @@ io.on('connection', (socket: Socket) => {
           lastName: true,
           email: true,
           role: true,
+          profilePicture: true,
           gradeLevel: true,
           section: true,
           department: true,
