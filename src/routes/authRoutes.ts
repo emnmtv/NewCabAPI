@@ -77,7 +77,10 @@ import { handleAnswerExam,handleLogin,
     handleGetQuestionBankFolders,
     handleUpdateQuestionBankFolder,
     handleDeleteQuestionBankFolder,
-    handleDeleteProfilePicture
+    handleDeleteProfilePicture,
+    handleGetComponentSettings,
+    handleUpdateComponentSettings,
+    handleInitializeComponentSettings
 } from '../controllers/authController';
 import { authenticateToken } from '../middleware/authMiddleware';
 import { upload } from '../middleware/fileMiddleware';
@@ -228,5 +231,10 @@ authRouter.post('/question-bank/folders', authenticateToken, handleCreateQuestio
 authRouter.get('/question-bank/folders', authenticateToken, handleGetQuestionBankFolders);
 authRouter.put('/question-bank/folders/:folderId', authenticateToken, handleUpdateQuestionBankFolder);
 authRouter.delete('/question-bank/folders/:folderId', authenticateToken, handleDeleteQuestionBankFolder);
+
+// Add these new routes
+authRouter.get('/component-settings/:role', authenticateToken, handleGetComponentSettings);
+authRouter.put('/component-settings/:role/:componentPath', authenticateToken, handleUpdateComponentSettings);
+authRouter.post('/component-settings/initialize', authenticateToken, handleInitializeComponentSettings);
 
 export { authRouter };

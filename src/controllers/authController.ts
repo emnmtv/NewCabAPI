@@ -51,7 +51,10 @@ import { fetchExamQuestions,answerExam,
   getQuestionBankFolders,
   updateQuestionBankFolder,
   deleteQuestionBankFolder,
-  deleteProfilePicture
+  deleteProfilePicture,
+  getComponentSettings,
+  updateComponentSettings,
+  initializeComponentSettings
 } from '../utils/authUtils';
 import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
@@ -2118,6 +2121,51 @@ export const handleDeleteProfilePicture = async (req: AuthRequest, res: Response
     res.status(400).json({ error: (error as Error).message });
   }
 }
+
+/**
+ * Handler to get component settings
+ */
+export const handleGetComponentSettings = async (req: AuthRequest, res: Response) => {
+  try {
+    const { role } = req.params;
+    const settings = await getComponentSettings(role);
+    res.status(200).json({ settings });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to update component settings
+ */
+export const handleUpdateComponentSettings = async (req: AuthRequest, res: Response) => {
+  try {
+    const { role, componentPath } = req.params;
+    const { isEnabled } = req.body;
+
+    const settings = await updateComponentSettings(role, componentPath, isEnabled);
+    res.status(200).json({
+      message: 'Component settings updated successfully',
+      settings
+    });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to initialize default component settings
+ */
+export const handleInitializeComponentSettings = async (_req: AuthRequest, res: Response) => {
+  try {
+    await initializeComponentSettings();
+    res.status(200).json({
+      message: 'Component settings initialized successfully'
+    });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
 
 export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin,  handleUpdateProfile,handleCreateExam,handleAnswerExam
   ,handleFetchExamQuestions, handleStartExam,handleStopExam, handleGetUserProfile,

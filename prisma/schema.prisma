@@ -285,4 +285,16 @@ model QuestionBank {
   updatedAt     DateTime @updatedAt
 }
 
+model ComponentSettings {
+  id            Int      @id @default(autoincrement())
+  role          String   // 'student', 'teacher', 'admin'
+  componentPath String   // Route path of the component
+  componentName String   // Display name of the component
+  isEnabled     Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([role, componentPath])
+}
+
 

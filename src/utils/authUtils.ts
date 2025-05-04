@@ -2285,7 +2285,99 @@ const deleteQuestionBankFolder = async (folderId: number, teacherId: number) => 
   return { success: true, message: 'Folder deleted successfully' };
 };
 
+/**
+ * Get component settings for a role
+ */
+const getComponentSettings = async (role: string) => {
+  return await prisma.componentSettings.findMany({
+    where: { role }
+  });
+};
 
+/**
+ * Update component settings
+ */
+const updateComponentSettings = async (
+  role: string,
+  componentPath: string,
+  isEnabled: boolean
+) => {
+  return await prisma.componentSettings.upsert({
+    where: {
+      role_componentPath: {
+        role,
+        componentPath
+      }
+    },
+    update: {
+      isEnabled
+    },
+    create: {
+      role,
+      componentPath,
+      componentName: componentPath.split('/').pop() || componentPath,
+      isEnabled
+    }
+  });
+};
+
+/**
+ * Initialize default component settings
+ */
+const initializeComponentSettings = async () => {
+  const defaultComponents = {
+    student: [
+      { path: '/student-subjects', name: 'Classes' },
+      { path: '/student/tasks', name: 'My Tasks' },
+      { path: '/take-exam', name: 'Take Exam' },
+      { path: '/student-exams', name: 'Exams' },
+      { path: '/exam-history', name: 'Exam History' },
+      { path: '/student-profile', name: 'Profile' },
+      { path: '/settings', name: 'Settings' }
+    ],
+    teacher: [
+      { path: '/teacher-subjects', name: 'Classes' },
+      { path: '/create-exam', name: 'Create Exam' },
+      { path: '/manage-exam', name: 'Monitor Exam' },
+      { path: '/manage-exams', name: 'Manage Exams' },
+      { path: '/question-bank', name: 'Question Bank' },
+      { path: '/create-survey', name: 'Create Survey' },
+      { path: '/my-surveys', name: 'Manage Surveys' },
+      { path: '/teacher-profile', name: 'Profile' },
+      { path: '/settings', name: 'Settings' }
+    ],
+    admin: [
+      { path: '/manage-users', name: 'Manage Users' },
+      { path: '/scores', name: 'Student Scores' },
+      { path: '/active-users', name: 'Active Users' },
+      { path: '/admin-exam-monitor', name: 'Exam Monitor' },
+      { path: '/manage-subjects', name: 'Manage Subjects' },
+      { path: '/admin-profile', name: 'Profile' },
+      { path: '/settings', name: 'Settings' },
+      { path: '/admin-component-controller', name: 'Controller' }
+    ]
+  };
+
+  for (const [role, components] of Object.entries(defaultComponents)) {
+    for (const component of components) {
+      await prisma.componentSettings.upsert({
+        where: {
+          role_componentPath: {
+            role,
+            componentPath: component.path
+          }
+        },
+        update: {},
+        create: {
+          role,
+          componentPath: component.path,
+          componentName: component.name,
+          isEnabled: true
+        }
+      });
+    }
+  }
+};
 
 export { registerAdmin, registerStudent, 
   registerTeacher, loginUser,  
@@ -2339,5 +2431,8 @@ export { registerAdmin, registerStudent,
   createQuestionBankFolder,
   getQuestionBankFolders,
   updateQuestionBankFolder,
-  deleteQuestionBankFolder
+  deleteQuestionBankFolder,
+  getComponentSettings,
+  updateComponentSettings,
+  initializeComponentSettings
 };
