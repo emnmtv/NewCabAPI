@@ -6,6 +6,7 @@ import cors from "cors";
 import { prisma } from './utils/authUtils'; // Import prisma client
 import path from 'path';
 import { initGameSocket } from './sockets/gameSocket';
+import documentRoutes from './routes/documentRoutes';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3300;  // Ensuring it's a number
@@ -459,6 +460,9 @@ io.on('connection', (socket: Socket) => {
 
 // Find where you initialize Socket.IO and add this line after it
 initGameSocket(io);
+
+// Add the document routes
+app.use('/api', documentRoutes);
 
 // Start the server
 server.listen(PORT, '0.0.0.0', () => {

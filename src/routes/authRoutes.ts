@@ -1,5 +1,6 @@
 import express from 'express';
-import { handleAnswerExam,handleLogin,
+import { 
+  handleAnswerExam,handleLogin,
     handleRegisterAdmin,handleRegisterStudent,
     handleRegisterTeacher,
     handleUpdateProfile,

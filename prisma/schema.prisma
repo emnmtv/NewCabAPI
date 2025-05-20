@@ -16,7 +16,7 @@ model User {
   phone        String?  // Optional
   address      String?  // Optional
   role         String   // 'student', 'teacher', 'admin'
-  lrn          Int?     @unique  // Optional, for students only
+  lrn          String?  @unique  // Optional, for students only
   gradeLevel   Int?     // Optional, for students only
   section      String?  // Optional, for students only
   domain       String?  // Optional, for teachers only

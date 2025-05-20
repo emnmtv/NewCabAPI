@@ -69,7 +69,9 @@ const handleRegisterStudent = async (req: AuthRequest, res: Response) => {
   console.log('Received registration request for student:', { email, firstName, lastName });
 
   try {
-    const user = await registerStudent(email, password, firstName, lastName, address, lrn, gradeLevel, section);
+    // Ensure LRN is treated as a string
+    const lrnString = lrn ? lrn.toString() : undefined;
+    const user = await registerStudent(email, password, firstName, lastName, address, lrnString, gradeLevel, section);
     res.status(201).json({ message: 'Student registered successfully.', user });
   } catch (error) {
     console.error('Registration error:', error);
@@ -103,7 +105,9 @@ const handleRegisterAdmin = async (req: AuthRequest, res: Response) => {
 const handleLogin = async (req: AuthRequest, res: Response) => {
   const { email, lrn, password } = req.body;
   try {
-    const { token } = await loginUser(email, lrn, password);
+    // Ensure LRN is treated as a string
+    const lrnString = lrn ? lrn.toString() : undefined;
+    const { token } = await loginUser(email, lrnString, password);
     res.status(200).json({ 
       message: 'Login successful', 
       token 
@@ -1371,13 +1375,14 @@ export const handleAddTaskVisibility = async (req: AuthRequest, res: Response) =
     }
 
     // Convert string LRNs to integers
-    const lrnNumbers = studentLRNs.map(lrn => parseInt(lrn));
+    // Keep LRNs as strings since schema is now using String type
+    const lrnStrings = studentLRNs.map(lrn => lrn.toString());
 
     // First get all students by their LRNs
     const students = await prisma.user.findMany({
       where: {
         lrn: {
-          in: lrnNumbers
+          in: lrnStrings
         },
         role: 'student'
       }

@@ -20,7 +20,7 @@ const registerStudent = async (
   firstName: string,
   lastName: string,
   address?: string,
-  lrn?: number,
+  lrn?: string,
   gradeLevel?: number,
   section?: string
 ) => {
@@ -95,7 +95,7 @@ const registerAdmin = async (
   return user;
 };
 
-const loginUser = async (email: string | undefined, lrn: number | undefined, password: string) => {
+const loginUser = async (email: string | undefined, lrn: string | undefined, password: string) => {
   // Ensure at least one of email or LRN is provided
   if (!email && !lrn) {
     throw new Error('Email or LRN is required');
@@ -115,7 +115,7 @@ const loginUser = async (email: string | undefined, lrn: number | undefined, pas
   else if (lrn) {
     user = await prisma.user.findUnique({
       where: {
-        lrn: lrn,  // Ensure it's treated as a number
+        lrn: lrn.toString(),  // Ensure it's treated as a string
       },
     });
   }
@@ -1062,7 +1062,7 @@ const updateUser = async (userId: number, updateData: {
   lastName?: string;
   email?: string;
   address?: string;
-  lrn?: number;
+  lrn?: string;
   gradeLevel?: number;
   section?: string;
   department?: string;
