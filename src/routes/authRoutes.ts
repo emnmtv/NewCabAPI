@@ -81,7 +81,10 @@ import {
     handleDeleteProfilePicture,
     handleGetComponentSettings,
     handleUpdateComponentSettings,
-    handleInitializeComponentSettings
+    handleInitializeComponentSettings,
+    handleGetProfileEditPermissions,
+    handleUpdateProfileEditPermissions,
+    handleUpdateStudentLRN
 } from '../controllers/authController';
 import { authenticateToken } from '../middleware/authMiddleware';
 import { upload } from '../middleware/fileMiddleware';
@@ -113,6 +116,9 @@ authRouter.get('/teacher-exams', authenticateToken, handleGetTeacherExams);
 authRouter.put('/exam/:examId', authenticateToken, handleUpdateExam);
 authRouter.delete('/exam/:examId', authenticateToken, handleDeleteExam);
 authRouter.get('/exam-analysis/:examId', authenticateToken, handleGetExamAnalysis);
+
+// Add student LRN specific update route
+authRouter.put('/student/lrn', authenticateToken, handleUpdateStudentLRN);
 
 // Survey routes - note that some don't require authentication
 authRouter.post('/survey', authenticateToken, handleCreateSurvey);
@@ -237,5 +243,9 @@ authRouter.delete('/question-bank/folders/:folderId', authenticateToken, handleD
 authRouter.get('/component-settings/:role', authenticateToken, handleGetComponentSettings);
 authRouter.put('/component-settings/:role/:componentPath', authenticateToken, handleUpdateComponentSettings);
 authRouter.post('/component-settings/initialize', authenticateToken, handleInitializeComponentSettings);
+
+// Add these new routes for profile edit permissions
+authRouter.get('/profile-edit-permissions', authenticateToken, handleGetProfileEditPermissions);
+authRouter.put('/profile-edit-permissions', authenticateToken, handleUpdateProfileEditPermissions);
 
 export { authRouter };

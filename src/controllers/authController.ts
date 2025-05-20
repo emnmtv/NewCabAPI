@@ -54,7 +54,10 @@ import { fetchExamQuestions,answerExam,
   deleteProfilePicture,
   getComponentSettings,
   updateComponentSettings,
-  initializeComponentSettings
+  initializeComponentSettings,
+  getProfileEditPermissions,
+  updateProfileEditPermissions,
+  updateStudentLRN
 } from '../utils/authUtils';
 import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
@@ -120,7 +123,7 @@ const handleLogin = async (req: AuthRequest, res: Response) => {
 // Update a user's profile
 const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
-  const { firstName, lastName, email, address, gradeLevel, section, domain, department, password, profilePicture } = req.body;
+  const { firstName, lastName, email, address, gradeLevel, section, domain, department, password, profilePicture, lrn } = req.body;
   
   try {
     // Validate password length if provided
@@ -194,7 +197,8 @@ const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
       domain,
       department,
       password,
-      processedProfilePicture
+      processedProfilePicture,
+      lrn
     );
     res.status(200).json({ message: 'Profile updated successfully', updatedUser });
   } catch (error) {
@@ -2172,6 +2176,76 @@ export const handleInitializeComponentSettings = async (_req: AuthRequest, res: 
   }
 };
 
+/**
+ * Handler to get profile edit permissions
+ */
+export const handleGetProfileEditPermissions = async (_req: AuthRequest, res: Response) => {
+  try {
+    const permissions = await getProfileEditPermissions();
+    res.status(200).json({ permissions });
+  } catch (error) {
+    console.error('Error getting profile edit permissions:', error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to update profile edit permissions
+ */
+export const handleUpdateProfileEditPermissions = async (req: AuthRequest, res: Response) => {
+  try {
+    const { canEditLRN, canEditGradeSection } = req.body;
+    
+    // Ensure at least one permission is being updated
+    if (canEditLRN === undefined && canEditGradeSection === undefined) {
+      res.status(400).json({ error: 'No permissions provided for update' });
+      return;
+    }
+    
+    const permissions = await updateProfileEditPermissions({
+      canEditLRN,
+      canEditGradeSection
+    });
+    
+    res.status(200).json({
+      message: 'Profile edit permissions updated successfully',
+      permissions
+    });
+  } catch (error) {
+    console.error('Error updating profile edit permissions:', error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler for updating a student's LRN
+ */
+export const handleUpdateStudentLRN = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const { lrn } = req.body;
+
+    if (!lrn) {
+      res.status(400).json({ error: 'LRN is required' });
+      return;
+    }
+
+    const updatedUser = await updateStudentLRN(userId, lrn);
+    
+    res.status(200).json({
+      success: true,
+      message: 'LRN updated successfully',
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error('Error updating student LRN:', error);
+    res.status(400).json({ 
+      success: false,
+      error: (error as Error).message 
+    });
+  }
+};
+
 export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin,  handleUpdateProfile,handleCreateExam,handleAnswerExam
   ,handleFetchExamQuestions, handleStartExam,handleStopExam, handleGetUserProfile,
   handleGetStudents,
@@ -2226,5 +2300,6 @@ export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, hand
   handleCreateQuestionBankFolder,
   handleGetQuestionBankFolders,
   handleUpdateQuestionBankFolder,
-  handleDeleteQuestionBankFolder
+  handleDeleteQuestionBankFolder,
+
 };

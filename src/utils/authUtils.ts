@@ -163,7 +163,8 @@ const updateUserProfile = async (
   domain?: string,
   department?: string,
   password?: string,
-  profilePicture?: string
+  profilePicture?: string,
+  lrn?: string
 ) => {
   const updatedData: any = {};
 
@@ -176,7 +177,7 @@ const updateUserProfile = async (
   if (domain) updatedData.domain = domain;
   if (department) updatedData.department = department;
   if (profilePicture) updatedData.profilePicture = profilePicture;
-  
+  if (lrn) updatedData.lrn = lrn;
   // If password is provided, hash it
   if (password) {
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -2333,6 +2334,7 @@ const initializeComponentSettings = async () => {
       { path: '/student-exams', name: 'Exams' },
       { path: '/exam-history', name: 'Exam History' },
       { path: '/student-profile', name: 'Profile' },
+      { path: '/answer-survey', name: 'Survey' },
       { path: '/settings', name: 'Settings' }
     ],
     teacher: [
@@ -2377,6 +2379,140 @@ const initializeComponentSettings = async () => {
       });
     }
   }
+};
+
+// Profile edit permission functions
+const getProfileEditPermissions = async () => {
+  // Try to get existing settings
+  let lrnSetting = await prisma.systemSettings.findUnique({
+    where: { settingKey: 'profile_edit_lrn' }
+  });
+
+  let gradeSectionSetting = await prisma.systemSettings.findUnique({
+    where: { settingKey: 'profile_edit_grade_section' }
+  });
+
+  // If settings don't exist, create them with default values (disabled)
+  if (!lrnSetting) {
+    lrnSetting = await prisma.systemSettings.create({
+      data: {
+        settingKey: 'profile_edit_lrn',
+        settingValue: 'false',
+        description: 'Allow students to edit their LRN'
+      }
+    });
+  }
+
+  if (!gradeSectionSetting) {
+    gradeSectionSetting = await prisma.systemSettings.create({
+      data: {
+        settingKey: 'profile_edit_grade_section',
+        settingValue: 'false',
+        description: 'Allow students to edit their grade level and section'
+      }
+    });
+  }
+
+  return {
+    canEditLRN: lrnSetting.settingValue === 'true',
+    canEditGradeSection: gradeSectionSetting.settingValue === 'true'
+  };
+};
+
+const updateProfileEditPermissions = async (permissions: {
+  canEditLRN?: boolean;
+  canEditGradeSection?: boolean;
+}) => {
+  const updates = [];
+
+  if (permissions.canEditLRN !== undefined) {
+    updates.push(
+      prisma.systemSettings.upsert({
+        where: { settingKey: 'profile_edit_lrn' },
+        update: { settingValue: permissions.canEditLRN.toString() },
+        create: {
+          settingKey: 'profile_edit_lrn',
+          settingValue: permissions.canEditLRN.toString(),
+          description: 'Allow students to edit their LRN'
+        }
+      })
+    );
+  }
+
+  if (permissions.canEditGradeSection !== undefined) {
+    updates.push(
+      prisma.systemSettings.upsert({
+        where: { settingKey: 'profile_edit_grade_section' },
+        update: { settingValue: permissions.canEditGradeSection.toString() },
+        create: {
+          settingKey: 'profile_edit_grade_section',
+          settingValue: permissions.canEditGradeSection.toString(),
+          description: 'Allow students to edit their grade level and section'
+        }
+      })
+    );
+  }
+
+  // Execute all updates in parallel
+  await Promise.all(updates);
+
+  // Return the updated settings
+  return getProfileEditPermissions();
+};
+
+/**
+ * Update a student's LRN
+ * @param userId Student user ID
+ * @param lrn New LRN value to set
+ * @returns Updated user object
+ */
+const updateStudentLRN = async (userId: number, lrn: string) => {
+  // First verify that the user is a student
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true }
+  });
+
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  if (user.role !== 'student') {
+    throw new Error('Only students can update their LRN');
+  }
+
+  // Validate LRN format - should be numeric and 12 digits
+  if (!lrn || !/^\d{12}$/.test(lrn)) {
+    throw new Error('Invalid LRN format. LRN must be 12 digits');
+  }
+
+  // Check if LRN is already taken by another user
+  const existingUser = await prisma.user.findUnique({
+    where: { lrn },
+    select: { id: true }
+  });
+
+  if (existingUser && existingUser.id !== userId) {
+    throw new Error('This LRN is already registered to another student');
+  }
+
+  // Update the LRN
+  return await prisma.user.update({
+    where: { id: userId },
+    data: { lrn },
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      lrn: true,
+      gradeLevel: true,
+      section: true,
+      role: true,
+      createdAt: true,
+      updatedAt: true
+    }
+  });
 };
 
 export { registerAdmin, registerStudent, 
@@ -2434,5 +2570,8 @@ export { registerAdmin, registerStudent,
   deleteQuestionBankFolder,
   getComponentSettings,
   updateComponentSettings,
-  initializeComponentSettings
+  initializeComponentSettings,
+  getProfileEditPermissions,
+  updateProfileEditPermissions,
+  updateStudentLRN
 };
