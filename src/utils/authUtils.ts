@@ -217,7 +217,13 @@ const createExam = async (
     imageUrl?: string  // Add optional imageUrl parameter
   }>,
   userId: number,
-  isDraft: boolean
+  isDraft: boolean,
+  // Add new parameters for timer, scheduling, and attempts
+  durationMinutes?: number,
+  startDateTime?: Date,
+  endDateTime?: Date,
+  maxAttempts?: number,
+  attemptSpacing?: number
 ) => {
   // Check if testCode already exists
   const existingExam = await prisma.exam.findUnique({
@@ -236,6 +242,12 @@ const createExam = async (
       isDraft,
       status: isDraft ? 'draft' : 'pending',
       userId,
+      // Add the new fields
+      durationMinutes,
+      startDateTime,
+      endDateTime,
+      maxAttempts,
+      attemptSpacing,
       questions: {
         create: questions.map(q => ({
           questionText: q.questionText,
@@ -257,7 +269,7 @@ const createExam = async (
 /**
  * Calculate and store the score for a user's exam
  */
-const calculateAndStoreScore = async (userId: number, examId: number) => {
+const calculateAndStoreScore = async (userId: number, examId: number, attemptId?: number) => {
   // Get the total number of questions in the exam
   const examQuestions = await prisma.question.count({
     where: {
@@ -266,13 +278,23 @@ const calculateAndStoreScore = async (userId: number, examId: number) => {
   });
 
   // Get all the user's answers for this exam
+  let whereClause: any = {
+    userId,
+    examId,
+  };
+  
+  // If attemptId is provided, filter answers by that attempt
+  if (attemptId) {
+    whereClause.attemptId = attemptId;
+  }
+  
   const userAnswers = await prisma.examAnswer.findMany({
-    where: {
-      userId,
-      examId,
-    },
+    where: whereClause,
     select: {
       isCorrect: true,
+      questionId: true,
+      userAnswer: true,
+      question: true
     },
   });
 
@@ -287,46 +309,132 @@ const calculateAndStoreScore = async (userId: number, examId: number) => {
     ? Math.round((correctAnswers / totalQuestions) * 100 * 10) / 10 
     : 0;
 
-  // Store or update the score
-  const score = await prisma.score.upsert({
+  // Get the attempt details
+  let attempt;
+  if (attemptId) {
+    attempt = await prisma.examAttempt.findUnique({
+      where: { id: attemptId }
+    });
+  }
+
+  // Either update existing score or create new one
+  // With the modified schema, there's only one score per user per exam
+  const existingScore = await prisma.score.findFirst({
     where: {
-      userId_examId: {
+      userId,
+      examId
+    }
+  });
+  
+  let score;
+  if (existingScore) {
+    // Update existing score with latest attempt information
+    score = await prisma.score.update({
+      where: { id: existingScore.id },
+      data: {
+        score: correctAnswers,
+        total: totalQuestions,
+        percentage,
+        attemptId, // Always update to latest attempt ID
+        submittedAt: new Date() // Update submission time
+      }
+    });
+  } else {
+    // Create a new score record
+    score = await prisma.score.create({
+      data: {
         userId,
         examId,
-      },
-    },
-    update: {
-      score: correctAnswers,
-      total: totalQuestions,
-      percentage,
-      submittedAt: new Date(),
-    },
-    create: {
-      userId,
-      examId,
-      score: correctAnswers,
-      total: totalQuestions,
-      percentage,
-    },
-  });
+        score: correctAnswers,
+        total: totalQuestions,
+        percentage,
+        attemptId // Include attempt ID if provided
+      }
+    });
+  }
 
-  console.log(`Score calculated for user ${userId}, exam ${examId}: ${correctAnswers}/${totalQuestions} (${percentage}%)`);
+  // Always create attempt record if we have a completed attempt
+  // This preserves the history of all attempts
+  if (attempt && attempt.isCompleted) {
+    // Format answers data for storing
+    const answersData = userAnswers.map(answer => ({
+      questionId: answer.questionId,
+      questionText: answer.question?.questionText || "",
+      userAnswer: answer.userAnswer,
+      isCorrect: answer.isCorrect,
+      correctAnswer: answer.question?.correctAnswer || ""
+    }));
+
+    // Create an attempt record to store the historical data
+    await prisma.attemptRecord.create({
+      data: {
+        attemptId: attempt.id,
+        userId,
+        examId,
+        attemptNumber: attempt.attemptNumber,
+        score: correctAnswers,
+        total: totalQuestions,
+        percentage,
+        answersData,
+        timeSpent: attempt.timeSpent,
+        startedAt: attempt.startedAt,
+        completedAt: attempt.completedAt || new Date(),
+      }
+    });
+  }
+
+  console.log(`Score calculated for user ${userId}, exam ${examId}, attempt ${attemptId}: ${correctAnswers}/${totalQuestions} (${percentage}%)`);
   return score;
 };
 
-// Modify the answerExam function to calculate and return the score
-const answerExam = async (testCode: string, userId: number, answers: Array<{ questionId: number; userAnswer: string }>) => {
+// Modify the answerExam function to associate answers with specific attempts
+const answerExam = async (
+  testCode: string, 
+  userId: number, 
+  answers: Array<{ questionId: number; userAnswer: string }>,
+  attemptId?: number // Add attemptId parameter
+) => {
   // First find the exam ID by testCode
   const exam = await prisma.exam.findUnique({
     where: { testCode },
-    select: { id: true }
+    select: { 
+      id: true,
+      durationMinutes: true,
+      maxAttempts: true
+    }
   });
 
   if (!exam) {
     throw new Error('Exam not found');
   }
 
-  // Process and save the answers (existing code)
+  let currentAttemptId = attemptId;
+
+  // If no attemptId is provided, check for an active attempt
+  if (!currentAttemptId) {
+    const activeAttempt = await prisma.examAttempt.findFirst({
+      where: {
+        examId: exam.id,
+        userId,
+        isCompleted: false
+      },
+      orderBy: {
+        startedAt: 'desc'
+      }
+    });
+    
+    if (activeAttempt) {
+      currentAttemptId = activeAttempt.id;
+    } else {
+      // Create a new attempt if none exists
+      const newAttempt = await createExamAttempt(exam.id, userId);
+      currentAttemptId = newAttempt.id;
+    }
+  }
+
+  // At this point, we should have a valid attemptId in currentAttemptId
+
+  // Process and save the answers
   const answeredQuestions = [];
   
   for (const answer of answers) {
@@ -343,7 +451,7 @@ const answerExam = async (testCode: string, userId: number, answers: Array<{ que
     // Determine if the answer is correct
     const isCorrect = answer.userAnswer.toLowerCase() === question.correctAnswer.toLowerCase();
 
-    // Update or create the answer in the database
+    // Update or create the answer in the database with attemptId
     const examAnswer = await prisma.examAnswer.upsert({
       where: {
         examId_userId_questionId: {
@@ -354,27 +462,50 @@ const answerExam = async (testCode: string, userId: number, answers: Array<{ que
       },
       update: {
         userAnswer: answer.userAnswer,
-        isCorrect
+        isCorrect,
+        attemptId: currentAttemptId // Include attemptId in the update
       },
       create: {
         examId: exam.id,
         userId,
         questionId: answer.questionId,
         userAnswer: answer.userAnswer,
-        isCorrect
+        isCorrect,
+        attemptId: currentAttemptId // Include attemptId in the create
       }
     });
 
     answeredQuestions.push(examAnswer);
   }
 
+  // Complete the attempt if requested
+  let attemptCompleted = false;
+  let finalAttempt = null;
+
+  if (currentAttemptId) {
+    const attempt = await prisma.examAttempt.findUnique({
+      where: { id: currentAttemptId }
+    });
+    
+    // If the attempt exists and is not already completed, complete it
+    if (attempt && !attempt.isCompleted) {
+      finalAttempt = await completeExamAttempt(currentAttemptId, userId);
+      attemptCompleted = true;
+    } else if (attempt) {
+      finalAttempt = attempt;
+    }
+  }
+
   // Calculate and store the score
-  const score = await calculateAndStoreScore(userId, exam.id);
+  const score = await calculateAndStoreScore(userId, exam.id, currentAttemptId);
 
   // Return both the answered questions and the score
   return {
     answeredQuestions,
-    score
+    score,
+    attemptCompleted,
+    attemptId: currentAttemptId,
+    attempt: finalAttempt
   };
 };
 
@@ -605,10 +736,43 @@ const fetchStudentScores = async (studentId?: number, examId?: number) => {
           testCode: true,
           examTitle: true,
           classCode: true,
-          // Remove or replace createdAt depending on your schema
-          // If createdAt doesn't exist but you have a similar field:
-          // created: true,  // If your field is named differently
-          // Or remove it entirely if no such field exists
+          durationMinutes: true,
+          maxAttempts: true,
+          startDateTime: true,
+          endDateTime: true,
+          attempts: {
+            select: {
+              id: true,
+              startedAt: true,
+              completedAt: true,
+              attemptNumber: true,
+              timeSpent: true,
+              isCompleted: true,
+              records: {
+                select: {
+                  id: true,
+                  score: true,
+                  total: true,
+                  percentage: true,
+                  startedAt: true,
+                  completedAt: true,
+                  timeSpent: true
+                }
+              }
+            },
+            where: studentId ? { userId: studentId } : undefined,
+            orderBy: { attemptNumber: 'asc' }
+          } 
+        },
+      },
+      attempt: {
+        select: {
+          id: true,
+          attemptNumber: true,
+          startedAt: true,
+          completedAt: true,
+          timeSpent: true,
+          isCompleted: true
         }
       }
     },
@@ -617,7 +781,140 @@ const fetchStudentScores = async (studentId?: number, examId?: number) => {
     ]
   });
   
-  return scores;
+  // Get attempt records for more detailed historical view when filtering by student and exam
+  let attemptRecords: any[] = [];
+  if (studentId && examId) {
+    attemptRecords = await prisma.attemptRecord.findMany({
+      where: {
+        userId: studentId,
+        examId: examId
+      },
+      orderBy: {
+        attemptNumber: 'desc'
+      },
+      include: {
+        attempt: true
+      }
+    });
+  }
+  
+  return {
+    scores,
+    attemptRecords
+  };
+};
+
+/**
+ * Restore a historical attempt as the current score
+ */
+const restoreAttemptScore = async (
+  recordId: number,
+  teacherId: number
+) => {
+  // First, get the attempt record
+  const record = await prisma.attemptRecord.findUnique({
+    where: { id: recordId },
+    include: {
+      attempt: true,
+      exam: {
+        select: {
+          userId: true, // Teacher who created the exam
+          id: true,
+          questions: true
+        }
+      }
+    }
+  });
+
+  if (!record) {
+    throw new Error('Attempt record not found');
+  }
+
+  // Verify the teacher has permission (either the exam creator or admin)
+  const teacher = await prisma.user.findUnique({
+    where: { id: teacherId },
+    select: { role: true }
+  });
+
+  if (record.exam.userId !== teacherId && teacher?.role !== 'admin') {
+    throw new Error('You do not have permission to modify this exam record');
+  }
+
+  // Parse the answers data stored as JSON in the record
+  const answersData = record.answersData as any;
+  
+  // Start a transaction to ensure atomic operations
+  return await prisma.$transaction(async (tx) => {
+    // 1. Delete existing answers for this user/exam combination
+    await tx.examAnswer.deleteMany({
+      where: {
+        userId: record.userId,
+        examId: record.examId
+      }
+    });
+    
+    // 2. Create new exam answers based on the stored data
+    const createdAnswers = [];
+    if (Array.isArray(answersData)) {
+      for (const answerData of answersData) {
+        const createdAnswer = await tx.examAnswer.create({
+          data: {
+            examId: record.examId,
+            questionId: answerData.questionId,
+            userId: record.userId,
+            userAnswer: answerData.userAnswer,
+            isCorrect: answerData.isCorrect,
+            submittedAt: new Date(),
+            attemptId: record.attemptId
+          }
+        });
+        createdAnswers.push(createdAnswer);
+      }
+    }
+    
+    // 3. Update or create the score record
+    // Find the current score for this user/exam if any
+    let score;
+    const existingScore = await tx.score.findFirst({
+      where: {
+        userId: record.userId,
+        examId: record.examId
+      }
+    });
+
+    if (existingScore) {
+      // Update the existing score
+      score = await tx.score.update({
+        where: { id: existingScore.id },
+        data: {
+          score: record.score,
+          total: record.total,
+          percentage: record.percentage,
+          attemptId: record.attemptId,
+          submittedAt: new Date() // Update the timestamp to now
+        }
+      });
+    } else {
+      // Create a new score entry
+      score = await tx.score.create({
+        data: {
+          userId: record.userId,
+          examId: record.examId,
+          score: record.score,
+          total: record.total,
+          percentage: record.percentage,
+          attemptId: record.attemptId
+        }
+      });
+    }
+
+    return {
+      score,
+      record,
+      answersRestored: createdAnswers.length,
+      message: `Successfully restored attempt #${record.attemptNumber} as the active score with ${createdAnswers.length} answers`
+    };
+  });
 };
 
 /**
@@ -675,6 +972,12 @@ const updateExam = async (
       imageUrl?: string;  // Add optional imageUrl parameter
     }>;
     isDraft?: boolean;
+    // Add attempt and scheduling parameters
+    durationMinutes?: number;
+    startDateTime?: Date;
+    endDateTime?: Date;
+    maxAttempts?: number;
+    attemptSpacing?: number;
   }
 ) => {
   // First verify the teacher owns this exam
@@ -720,6 +1023,8 @@ const updateExam = async (
         }))
       });
     }
+// Clean up updateData: convert empty strings to null for nullable fields
+const clean = (val: any) => (val === '' || val === undefined ? null : val);
 
     // Update the exam details
     return await tx.exam.update({
@@ -729,7 +1034,13 @@ const updateExam = async (
         classCode: updateData.classCode,
         examTitle: updateData.examTitle,
         isDraft: updateData.isDraft,
-        status: updateData.isDraft ? 'draft' : 'pending'
+        status: updateData.isDraft ? 'draft' : 'pending',
+        // Add attempt and scheduling updates
+        durationMinutes: clean(updateData.durationMinutes),
+        startDateTime: clean(updateData.startDateTime),
+        endDateTime: clean(updateData.endDateTime),
+        maxAttempts: clean(updateData.maxAttempts),
+        attemptSpacing: clean(updateData.attemptSpacing)
       },
       include: {
         questions: true
@@ -1311,7 +1622,7 @@ const fetchAllExamsForAdmin = async () => {
 /**
  * Calculate Mean Percentage Score (MPS) for an exam
  */
-const calculateExamMPS = async (examId: number) => {
+const calculateExamMPS = async (examId: number, useLatestAttemptOnly: boolean = true) => {
   // Get all scores for this exam
   const scores = await prisma.score.findMany({
     where: { examId },
@@ -1323,6 +1634,16 @@ const calculateExamMPS = async (examId: number) => {
           lastName: true,
           gradeLevel: true,
           section: true
+        }
+      },
+      attempt: {
+        select: {
+          id: true,
+          attemptNumber: true,
+          startedAt: true,
+          completedAt: true,
+          timeSpent: true,
+          isCompleted: true
         }
       }
     }
@@ -1336,6 +1657,11 @@ const calculateExamMPS = async (examId: number) => {
       overallStats: {
         highestScore: 0,
         lowestScore: 0,
+        highestPercentage: 0,
+        lowestPercentage: 0,
+        highestScoreRaw: 0,
+        lowestScoreRaw: 0,
+        totalPossible: 0,
         scoreDistribution: {
           excellent: 0, // 90-100
           good: 0,     // 80-89
@@ -1343,28 +1669,58 @@ const calculateExamMPS = async (examId: number) => {
           fair: 0,     // 60-69
           poor: 0      // below 60
         }
-      }
+      },
+      attemptData: []
     };
   }
 
+  // If we want to use latest attempt only, filter scores to keep only the latest attempt for each student
+  let filteredScores = scores;
+  if (useLatestAttemptOnly) {
+    // Group scores by student
+    const scoresByStudent = new Map();
+    scores.forEach(score => {
+      const studentId = score.userId;
+      
+      // If student doesn't exist in map or this is a later attempt, update
+      if (!scoresByStudent.has(studentId) || 
+          !scoresByStudent.get(studentId).attempt ||
+          !score.attempt ||
+          (score.attempt?.attemptNumber > scoresByStudent.get(studentId).attempt?.attemptNumber)) {
+        scoresByStudent.set(studentId, score);
+      }
+    });
+    
+    // Convert map back to array
+    filteredScores = Array.from(scoresByStudent.values());
+  }
+
+  // Find the highest and lowest scores
+  const highestScoreObj = filteredScores.reduce((prev, current) => 
+    (prev.percentage > current.percentage) ? prev : current);
+  
+  const lowestScoreObj = filteredScores.reduce((prev, current) => 
+    (prev.percentage < current.percentage) ? prev : current);
+
   // Calculate overall MPS and stats
-  const overallMPS = scores.reduce((sum, score) => sum + score.percentage, 0) / scores.length;
-  const overallHighest = Math.max(...scores.map(s => s.percentage));
-  const overallLowest = Math.min(...scores.map(s => s.percentage));
+  const overallMPS = filteredScores.reduce((sum, score) => sum + score.percentage, 0) / filteredScores.length;
+  const overallHighest = highestScoreObj.percentage;
+  const overallLowest = lowestScoreObj.percentage;
+  const totalPossible = filteredScores[0].total; // All scores should have the same total
 
   // Calculate overall score distribution
   const overallDistribution = {
-    excellent: scores.filter(s => s.percentage >= 90).length,
-    good: scores.filter(s => s.percentage >= 80 && s.percentage < 90).length,
-    satisfactory: scores.filter(s => s.percentage >= 70 && s.percentage < 80).length,
-    fair: scores.filter(s => s.percentage >= 60 && s.percentage < 70).length,
-    poor: scores.filter(s => s.percentage < 60).length
+    excellent: filteredScores.filter(s => s.percentage >= 90).length,
+    good: filteredScores.filter(s => s.percentage >= 80 && s.percentage < 90).length,
+    satisfactory: filteredScores.filter(s => s.percentage >= 70 && s.percentage < 80).length,
+    fair: filteredScores.filter(s => s.percentage >= 60 && s.percentage < 70).length,
+    poor: filteredScores.filter(s => s.percentage < 60).length
   };
 
   // Group scores by section
-  const sectionScores = new Map<string, number[]>();
+  const sectionScores = new Map<string, Array<{percentage: number, score: number, total: number, attemptNumber?: number}>>();
   
-  scores.forEach(score => {
+  filteredScores.forEach(score => {
     const gradeLevel = score.user.gradeLevel || 0;
     const section = score.user.section || 'Unknown';
     const sectionKey = `G${gradeLevel}-${section}`;
@@ -1373,31 +1729,51 @@ const calculateExamMPS = async (examId: number) => {
       sectionScores.set(sectionKey, []);
     }
     
-    sectionScores.get(sectionKey)!.push(score.percentage);
+    sectionScores.get(sectionKey)!.push({
+      percentage: score.percentage,
+      score: score.score,
+      total: score.total,
+      attemptNumber: score.attempt?.attemptNumber
+    });
   });
 
   // Calculate MPS and stats for each section
-  const sectionMPS = Array.from(sectionScores.entries()).map(([sectionName, percentages]) => {
-    const sectionScores = scores.filter(score => {
+  const sectionMPS = Array.from(sectionScores.entries()).map(([sectionName, sectionData]) => {
+    const sectionPercentages = sectionData.map(d => d.percentage);
+    
+    // Find highest and lowest scores in this section
+    const highestScoreIndex = sectionData.reduce((maxIndex, current, currentIndex, array) => 
+      current.percentage > array[maxIndex].percentage ? currentIndex : maxIndex, 0);
+      
+    const lowestScoreIndex = sectionData.reduce((minIndex, current, currentIndex, array) => 
+      current.percentage < array[minIndex].percentage ? currentIndex : minIndex, 0);
+    
+    const highestData = sectionData[highestScoreIndex];
+    const lowestData = sectionData[lowestScoreIndex];
+
+    const sectionScoresList = filteredScores.filter(score => {
       const gradeSection = `G${score.user.gradeLevel}-${score.user.section}`;
       return gradeSection === sectionName;
     });
 
     // Calculate section score distribution
     const distribution = {
-      excellent: sectionScores.filter(s => s.percentage >= 90).length,
-      good: sectionScores.filter(s => s.percentage >= 80 && s.percentage < 90).length,
-      satisfactory: sectionScores.filter(s => s.percentage >= 70 && s.percentage < 80).length,
-      fair: sectionScores.filter(s => s.percentage >= 60 && s.percentage < 70).length,
-      poor: sectionScores.filter(s => s.percentage < 60).length
+      excellent: sectionScoresList.filter(s => s.percentage >= 90).length,
+      good: sectionScoresList.filter(s => s.percentage >= 80 && s.percentage < 90).length,
+      satisfactory: sectionScoresList.filter(s => s.percentage >= 70 && s.percentage < 80).length,
+      fair: sectionScoresList.filter(s => s.percentage >= 60 && s.percentage < 70).length,
+      poor: sectionScoresList.filter(s => s.percentage < 60).length
     };
 
     return {
       section: sectionName,
-      mps: percentages.reduce((sum, p) => sum + p, 0) / percentages.length,
-      studentCount: percentages.length,
-      highestScore: Math.max(...percentages),
-      lowestScore: Math.min(...percentages),
+      mps: sectionPercentages.reduce((sum, p) => sum + p, 0) / sectionPercentages.length,
+      studentCount: sectionPercentages.length,
+      highestPercentage: highestData.percentage,
+      lowestPercentage: lowestData.percentage,
+      highestScoreRaw: highestData.score,
+      lowestScoreRaw: lowestData.score,
+      totalPossible: highestData.total,
       distribution
     };
   });
@@ -1405,15 +1781,56 @@ const calculateExamMPS = async (examId: number) => {
   // Sort sections by MPS (highest first)
   sectionMPS.sort((a, b) => b.mps - a.mps);
 
+  // Calculate attempt-specific data
+  const attemptData = [];
+  
+  // Group scores by attempt number
+  const scoresByAttempt = new Map();
+  for (const score of scores) {
+    if (score.attempt) {
+      const attemptNum = score.attempt.attemptNumber;
+      if (!scoresByAttempt.has(attemptNum)) {
+        scoresByAttempt.set(attemptNum, []);
+      }
+      scoresByAttempt.get(attemptNum).push(score);
+    }
+  }
+  
+  // Calculate MPS for each attempt
+  for (const [attemptNum, attemptScores] of scoresByAttempt.entries()) {
+    if (attemptScores.length > 0) {
+      const attemptMPS = attemptScores.reduce((sum: number, s: any) => sum + s.percentage, 0) / attemptScores.length;
+      const highestAttemptScore = Math.max(...attemptScores.map((s: any) => s.percentage));
+      const lowestAttemptScore = Math.min(...attemptScores.map((s: any) => s.percentage)); 
+      
+      attemptData.push({
+        attemptNumber: attemptNum,
+        studentCount: attemptScores.length,
+        mps: attemptMPS,
+        highestScore: highestAttemptScore,
+        lowestScore: lowestAttemptScore,
+        avgTimeSpent: attemptScores.reduce((sum: number, s: any) => sum + (s.attempt?.timeSpent || 0), 0) / attemptScores.length
+      });
+    }
+  }
+  
+  // Sort attempts by number
+  attemptData.sort((a, b) => a.attemptNumber - b.attemptNumber);
+
   return {
     overallMPS,
     sectionMPS,
-    totalStudents: scores.length,
+    totalStudents: filteredScores.length,
     overallStats: {
-      highestScore: overallHighest,
-      lowestScore: overallLowest,
+      highestPercentage: overallHighest,
+      lowestPercentage: overallLowest,
+      highestScoreRaw: highestScoreObj.score,
+      lowestScoreRaw: lowestScoreObj.score,
+      totalPossible,
       scoreDistribution: overallDistribution
-    }
+    },
+    attemptData,
+    useLatestAttemptOnly
   };
 };
 
@@ -1688,88 +2105,173 @@ const getSectionSubjects = async (grade: number, section: string) => {
 };
 
 /**
- * Get detailed exam answers for a student
+ * Get student exam answers with exam and student details
  */
-const getStudentExamAnswers = async (examId: number, studentId: number) => {
-  // Get the exam details first
-  const exam = await prisma.exam.findUnique({
-    where: { id: examId },
-    include: {
-      questions: true,
-      user: {
-        select: {
-          firstName: true,
-          lastName: true
-        }
-      }
-    }
-  });
-
-  if (!exam) {
-    throw new Error('Exam not found');
-  }
-
-  // Get student details
-  const student = await prisma.user.findUnique({
-    where: { id: studentId },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      gradeLevel: true,
-      section: true,
-      lrn: true
-    }
-  });
-
-  if (!student) {
-    throw new Error('Student not found');
-  }
-
-  // Get student's answers
-  const answers = await prisma.examAnswer.findMany({
+const getStudentExamAnswers = async (examId: number, studentId: number, attemptId?: number) => {
+  // First, get the student scores for this exam
+  const score = await prisma.score.findFirst({
     where: {
       examId,
       userId: studentId
-    }
-  });
-
-  // Get student's score
-  const score = await prisma.score.findUnique({
-    where: {
-      userId_examId: {
-        userId: studentId,
-        examId
-      }
-    }
-  });
-
-  // Map answers to questions
-  const questionsWithAnswers = exam.questions.map(question => {
-    const answer = answers.find(a => a.questionId === question.id);
-    return {
-      questionId: question.id,
-      questionText: question.questionText,
-      questionType: question.questionType,
-      options: question.options,
-      correctAnswer: question.correctAnswer,
-      imageUrl: question.imageUrl,
-      userAnswer: answer?.userAnswer || null,
-      isCorrect: answer?.isCorrect || false,
-      answerId: answer?.id || null
-    };
-  });
-
-  return {
-    exam: {
-      id: exam.id,
-      testCode: exam.testCode,
-      examTitle: exam.examTitle,
-      teacher: exam.user
     },
-    student,
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          lrn: true,
+          gradeLevel: true,
+          section: true
+        }
+      },
+      exam: {
+        include: {
+          questions: true
+        }
+      },
+      attempt: {
+        select: {
+          id: true,
+          attemptNumber: true,
+          startedAt: true,
+          completedAt: true,
+          timeSpent: true,
+          isCompleted: true
+        }
+      }
+    },
+    orderBy: {
+      submittedAt: 'desc'
+    }
+  });
+
+  // Get all the student's attempts for this exam
+  const attempts = await prisma.examAttempt.findMany({
+    where: {
+      examId,
+      userId: studentId
+    },
+    orderBy: {
+      attemptNumber: 'asc'
+    },
+    include: {
+      records: true
+    }
+  });
+
+  // Determine which attempt ID to use for fetching answers
+  // If a specific attemptId is provided, use that; otherwise use the one from the score
+  const targetAttemptId = attemptId || score?.attemptId;
+  
+  // Check if we're looking at a historical record
+  const attemptRecord = targetAttemptId ? 
+    await prisma.attemptRecord.findFirst({
+      where: {
+        attemptId: targetAttemptId
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    }) : undefined;
+
+  let answers: any[] = [];
+  const isHistoricalRecord = !!attemptRecord && !!attemptId;
+  
+  if (isHistoricalRecord && attemptRecord) {
+    // We're looking at a historical record
+    // Convert the stored answersData from JSON to an array
+    const answersData = attemptRecord.answersData as any[];
+    
+    // Format the answers in the same structure as real-time answers
+    answers = answersData.map(answer => ({
+      id: `historical-${answer.questionId}`, // Use a special ID for historical answers
+      examId: examId,
+      userId: studentId,
+      questionId: answer.questionId,
+      userAnswer: answer.userAnswer,
+      isCorrect: answer.isCorrect,
+      submittedAt: attemptRecord.completedAt,
+      attemptId: attemptRecord.attemptId,
+      question: {
+        questionText: answer.questionText,
+        correctAnswer: answer.correctAnswer
+      },
+      historical: true
+    }));
+  } else {
+    // Get current answers from the database
+    answers = await prisma.examAnswer.findMany({
+      where: {
+        examId,
+        userId: studentId,
+        ...(targetAttemptId ? { attemptId: targetAttemptId } : {})
+      },
+      include: {
+        question: true,
+        attempt: {
+          select: {
+            attemptNumber: true,
+            startedAt: true,
+            completedAt: true,
+            timeSpent: true
+          }
+        }
+      }
+    });
+  }
+
+  // If we don't have a score but have answers, we need to get the exam details separately
+  // Use optional chaining to safely handle nulls
+  let examData = score?.exam || undefined;
+  if (!examData && answers.length > 0) {
+    examData = await prisma.exam.findUnique({
+      where: { id: examId },
+      include: {
+        questions: true
+      }
+    }) || undefined;
+  }
+
+  // Get student info if not already included in score
+  let studentData = score?.user || undefined;
+  if (!studentData) {
+    studentData = await prisma.user.findUnique({
+      where: { id: studentId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        lrn: true,
+        gradeLevel: true,
+        section: true
+      }
+    }) || undefined;
+  }
+
+  // Prepare attempt information
+  const attemptInfo = targetAttemptId ? 
+    attempts.find(a => a.id === targetAttemptId) : undefined;
+  
+  const currentAttempt = attemptInfo ? {
+    id: attemptInfo.id,
+    attemptNumber: attemptInfo.attemptNumber,
+    startedAt: attemptInfo.startedAt,
+    completedAt: attemptInfo.completedAt,
+    timeSpent: attemptInfo.timeSpent,
+    isCompleted: attemptInfo.isCompleted,
+    isHistoricalRecord
+  } : undefined;
+
+  // Return everything with safer undefined handling
+  return {
     score,
-    answers: questionsWithAnswers
+    answers,
+    attempts,
+    examData,
+    studentData,
+    currentAttempt,
+    attemptRecord: isHistoricalRecord ? attemptRecord : undefined
   };
 };
 
@@ -1848,28 +2350,75 @@ const updateStudentExamScore = async (
     ? Math.round((newScore / totalQuestions) * 100 * 10) / 10 
     : 0;
 
-  // Update the score
-  const updatedScore = await prisma.score.upsert({
+  // Check if the student has an active attempt
+  const activeAttempt = await prisma.examAttempt.findFirst({
     where: {
-      userId_examId: {
-        userId: studentId,
-        examId
-      }
-    },
-    update: {
-      score: newScore,
-      total: totalQuestions,
-      percentage,
-      submittedAt: new Date()
-    },
-    create: {
-      userId: studentId,
       examId,
-      score: newScore,
-      total: totalQuestions,
-      percentage
+      userId: studentId,
+      isCompleted: false
+    },
+    orderBy: {
+      startedAt: 'desc'
     }
   });
+
+  const attemptId = activeAttempt?.id;
+
+  // Find existing score or create new one
+  const existingScore = await prisma.score.findFirst({
+    where: {
+      userId: studentId,
+      examId
+    }
+  });
+
+  let updatedScore;
+  if (existingScore) {
+    // Update existing score
+    updatedScore = await prisma.score.update({
+      where: {
+        id: existingScore.id
+      },
+      data: {
+        score: newScore,
+        total: totalQuestions,
+        percentage,
+        attemptId,
+        submittedAt: new Date() // Update submission time
+      }
+    });
+  } else {
+    // Create new score if none exists
+    updatedScore = await prisma.score.create({
+      data: {
+        userId: studentId,
+        examId,
+        score: newScore,
+        total: totalQuestions,
+        percentage,
+        attemptId
+      }
+    });
+  }
+
+  // Create an attempt record to store this manual update
+  if (attemptId) {
+    await prisma.attemptRecord.create({
+      data: {
+        attemptId,
+        userId: studentId,
+        examId,
+        attemptNumber: activeAttempt!.attemptNumber,
+        score: newScore,
+        total: totalQuestions,
+        percentage,
+        timeSpent: activeAttempt!.timeSpent || 0,
+        startedAt: activeAttempt!.startedAt,
+        completedAt: new Date(),
+        answersData: [] // Empty array since this is a manual update
+      }
+    });
+  }
 
   return updatedScore;
 };
@@ -2515,6 +3064,382 @@ const updateStudentLRN = async (userId: number, lrn: string) => {
   });
 };
 
+/**
+ * Create a new exam attempt for a user
+ */
+const createExamAttempt = async (examId: number, userId: number) => {
+  // Find all attempts and records to determine the next attempt number
+  const existingAttempts = await prisma.examAttempt.findMany({
+    where: {
+      examId,
+      userId,
+    },
+    orderBy: {
+      attemptNumber: 'desc',
+    },
+    take: 1,
+  });
+
+  // Also check attempt records for historical attempts
+  const attemptRecords = await prisma.attemptRecord.findMany({
+    where: {
+      examId,
+      userId,
+    },
+    orderBy: {
+      attemptNumber: 'desc',
+    },
+    take: 1,
+  });
+
+  // Find the highest attempt number from both sources
+  let highestAttemptNumber = 0;
+  
+  if (existingAttempts.length > 0) {
+    highestAttemptNumber = Math.max(highestAttemptNumber, existingAttempts[0].attemptNumber);
+  }
+  
+  if (attemptRecords.length > 0) {
+    highestAttemptNumber = Math.max(highestAttemptNumber, attemptRecords[0].attemptNumber);
+  }
+
+  const nextAttemptNumber = highestAttemptNumber + 1;
+
+  // Check maximum attempts limit from exam settings
+  const exam = await prisma.exam.findUnique({
+    where: { id: examId },
+    select: { maxAttempts: true }
+  });
+
+  if (exam?.maxAttempts && nextAttemptNumber > exam.maxAttempts) {
+    throw new Error(`Maximum number of attempts (${exam.maxAttempts}) reached for this exam`);
+  }
+
+  // Create a new attempt record
+  const attempt = await prisma.examAttempt.create({
+    data: {
+      examId,
+      userId,
+      attemptNumber: nextAttemptNumber,
+      startedAt: new Date(),
+      isCompleted: false,
+    },
+  });
+
+  console.log(`Created new exam attempt #${attempt.attemptNumber} for user ${userId}, exam ${examId}`);
+  return attempt;
+};
+
+/**
+ * Complete an exam attempt and calculate time spent
+ */
+const completeExamAttempt = async (attemptId: number, userId: number) => {
+  const attempt = await prisma.examAttempt.findUnique({
+    where: { id: attemptId },
+    include: {
+      exam: true
+    }
+  });
+
+  if (!attempt) {
+    throw new Error('Attempt not found');
+  }
+
+  if (attempt.userId !== userId) {
+    throw new Error('Unauthorized: This attempt belongs to another user');
+  }
+
+  if (attempt.isCompleted) {
+    return attempt; // Already completed, no need to update
+  }
+
+  // Calculate time spent in seconds
+  const startTime = new Date(attempt.startedAt).getTime();
+  const endTime = Date.now();
+  const timeSpent = Math.floor((endTime - startTime) / 1000); // seconds
+
+  // Update the attempt
+  const updatedAttempt = await prisma.examAttempt.update({
+    where: { id: attemptId },
+    data: {
+      isCompleted: true,
+      completedAt: new Date(),
+      timeSpent,
+    },
+  });
+
+  console.log(`Completed exam attempt #${attempt.attemptNumber} for user ${userId}, time spent: ${timeSpent} seconds`);
+  return updatedAttempt;
+};
+
+/**
+ * Get all attempts for a user on a specific exam
+ */
+const getUserExamAttempts = async (examId: number, userId: number) => {
+  // Get all attempts from both active attempts and historical records
+  const attempts = await prisma.examAttempt.findMany({
+    where: {
+      examId,
+      userId
+    },
+    orderBy: {
+      attemptNumber: 'desc'
+    },
+    include: {
+      exam: {
+        select: {
+          testCode: true,
+          examTitle: true,
+          durationMinutes: true,
+          maxAttempts: true
+        }
+      },
+      scores: {
+        orderBy: {
+          submittedAt: 'desc'
+        },
+        take: 1
+      },
+      records: true
+    }
+  });
+
+  // Also get attempt records to ensure we have a complete history
+  const attemptRecords = await prisma.attemptRecord.findMany({
+    where: {
+      examId,
+      userId
+    },
+    orderBy: {
+      attemptNumber: 'desc'
+    },
+    include: {
+      attempt: true
+    }
+  });
+
+  // Create a map to track unique attempt numbers we've seen
+  const attemptNumbersMap = new Map();
+
+  // Format the response to include score information
+  const formattedAttempts = attempts.map(attempt => {
+    // Get score from latest score entry or from records if completed
+    const score = attempt.scores.length > 0 
+      ? attempt.scores[0] 
+      : attempt.records.length > 0 
+        ? {
+            score: attempt.records[0].score,
+            total: attempt.records[0].total,
+            percentage: attempt.records[0].percentage,
+            submittedAt: attempt.records[0].createdAt
+          }
+        : null;
+    
+    // Track this attempt number
+    attemptNumbersMap.set(attempt.attemptNumber, true);
+
+    return {
+      id: attempt.id,
+      attemptNumber: attempt.attemptNumber,
+      startedAt: attempt.startedAt,
+      completedAt: attempt.completedAt,
+      timeSpent: attempt.timeSpent,
+      isCompleted: attempt.isCompleted,
+      exam: attempt.exam,
+      score
+    };
+  });
+
+  // Add any attempt records that aren't already included
+  const additionalAttempts = attemptRecords
+    .filter(record => !attemptNumbersMap.has(record.attemptNumber))
+    .map(record => {
+      return {
+        id: record.attemptId || 0,
+        attemptNumber: record.attemptNumber,
+        startedAt: record.startedAt,
+        completedAt: record.completedAt || new Date(),
+        timeSpent: record.timeSpent,
+        isCompleted: true,
+        isHistorical: true,
+        score: {
+          score: record.score,
+          total: record.total,
+          percentage: record.percentage,
+          submittedAt: record.completedAt
+        }
+      };
+    });
+
+  // Combine and sort all attempts
+  const allAttempts = [...formattedAttempts, ...additionalAttempts].sort((a, b) => 
+    b.attemptNumber - a.attemptNumber
+  );
+
+  return allAttempts;
+};
+
+/**
+ * Check if a user is eligible to take an exam
+ */
+const checkExamEligibility = async (testCode: string, userId: number) => {
+  // Get exam details
+  const exam = await prisma.exam.findUnique({
+    where: { testCode },
+    select: {
+      id: true,
+      status: true,
+      startDateTime: true,
+      endDateTime: true,
+      maxAttempts: true,
+      attemptSpacing: true,
+      durationMinutes: true,
+      user: {
+        select: {
+          firstName: true,
+          lastName: true
+        }
+      }
+    }
+  });
+
+  if (!exam) {
+    return {
+      eligible: false,
+      message: 'Exam not found',
+      exam: null
+    };
+  }
+
+  // Check if exam is active
+  if (exam.status !== 'started') {
+    return {
+      eligible: false,
+      message: 'Exam is not active',
+      exam
+    };
+  }
+
+  // Check scheduling
+  const now = new Date();
+  
+  if (exam.startDateTime && now < exam.startDateTime) {
+    return {
+      eligible: false,
+      message: `This exam will be available on ${exam.startDateTime.toLocaleString()}`,
+      exam,
+      availableAt: exam.startDateTime
+    };
+  }
+  
+  if (exam.endDateTime && now > exam.endDateTime) {
+    return {
+      eligible: false,
+      message: `This exam is no longer available (ended on ${exam.endDateTime.toLocaleString()})`,
+      exam,
+      endedAt: exam.endDateTime
+    };
+  }
+
+  // Get attempts including both active attempts and historical records
+  const attempts = await prisma.examAttempt.findMany({
+    where: {
+      examId: exam.id,
+      userId
+    },
+    orderBy: {
+      attemptNumber: 'desc'
+    },
+    include: {
+      records: true
+    }
+  });
+  
+  // Also get attempt records to count historical attempts
+  const attemptRecords = await prisma.attemptRecord.findMany({
+    where: {
+      examId: exam.id,
+      userId
+    },
+    orderBy: {
+      attemptNumber: 'desc'
+    }
+  });
+  
+  // Create a map to track unique attempt numbers
+  const attemptNumbersMap = new Map();
+  attempts.forEach(attempt => attemptNumbersMap.set(attempt.attemptNumber, true));
+  
+  // Add any attempt numbers from records that aren't already counted
+  attemptRecords.forEach(record => {
+    if (!attemptNumbersMap.has(record.attemptNumber)) {
+      attemptNumbersMap.set(record.attemptNumber, true);
+    }
+  });
+  
+  // Get the total unique attempt count
+  const totalAttemptCount = attemptNumbersMap.size;
+
+  // Check max attempts
+  if (exam.maxAttempts && totalAttemptCount >= exam.maxAttempts) {
+    return {
+      eligible: false,
+      message: `Maximum number of attempts (${exam.maxAttempts}) reached`,
+      exam,
+      attempts,
+      totalAttempts: totalAttemptCount
+    };
+  }
+
+  // Check attempt spacing
+  if (exam.attemptSpacing && attempts.length > 0) {
+    const lastAttempt = attempts[0];
+    const timePassedMinutes = (now.getTime() - lastAttempt.startedAt.getTime()) / (1000 * 60);
+    
+    if (timePassedMinutes < exam.attemptSpacing) {
+      const waitTimeRemaining = Math.ceil(exam.attemptSpacing - timePassedMinutes);
+      const nextAttemptTime = new Date(lastAttempt.startedAt.getTime() + (exam.attemptSpacing * 60 * 1000));
+      
+      return {
+        eligible: false,
+        message: `Please wait ${waitTimeRemaining} more minute(s) before your next attempt`,
+        exam,
+        attempts,
+        totalAttempts: totalAttemptCount,
+        nextAttemptAvailableAt: nextAttemptTime
+      };
+    }
+  }
+
+  // Check if there's an incomplete attempt
+  const incompleteAttempt = attempts.find(attempt => !attempt.isCompleted);
+  if (incompleteAttempt) {
+    return {
+      eligible: true,
+      message: 'You have an incomplete attempt that you can continue',
+      exam,
+      attempts,
+      incompleteAttempt,
+      totalAttempts: totalAttemptCount,
+      nextAttemptNumber: incompleteAttempt.attemptNumber
+    };
+  }
+
+  // Calculate next attempt number based on the highest current attempt number
+  const nextAttemptNumber = totalAttemptCount > 0 
+    ? Math.max(...Array.from(attemptNumbersMap.keys())) + 1 
+    : 1;
+
+  return {
+    eligible: true,
+    message: 'You are eligible to take this exam',
+    exam,
+    attempts,
+    totalAttempts: totalAttemptCount,
+    nextAttemptNumber
+  };
+};
+
 export { registerAdmin, registerStudent, 
   registerTeacher, loginUser,  
   updateUserProfile, prisma,QuestionType,
@@ -2573,5 +3498,11 @@ export { registerAdmin, registerStudent,
   initializeComponentSettings,
   getProfileEditPermissions,
   updateProfileEditPermissions,
-  updateStudentLRN
+  updateStudentLRN,
+  // Add new functions for exam attempts and scheduling
+  createExamAttempt,
+  completeExamAttempt,
+  getUserExamAttempts,
+  checkExamEligibility,
+  restoreAttemptScore
 };

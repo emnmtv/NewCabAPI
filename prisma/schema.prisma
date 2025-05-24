@@ -34,6 +34,8 @@ model User {
   taskVisibility TaskVisibility[]
   questionBank QuestionBank[]
   questionBankFolders QuestionBankFolder[]
+  examAttempts ExamAttempt[] // Add relation to ExamAttempt
+  attemptRecords AttemptRecord[] // Add relation to AttemptRecord
 }
 
 model Question {
@@ -63,6 +65,17 @@ model Exam {
   createdAt     DateTime      @default(now())   // Add this field
   updatedAt     DateTime      @updatedAt        // Add this field
   access        ExamAccess[]
+  attempts      ExamAttempt[] // Add relation to ExamAttempt
+  attemptRecords AttemptRecord[] // Add relation to AttemptRecord
+  
+  // Timer and scheduling fields
+  durationMinutes Int?         // Exam duration in minutes, null means no time limit
+  startDateTime  DateTime?     // When the exam becomes available
+  endDateTime    DateTime?     // When the exam stops being available
+  
+  // Attempts field
+  maxAttempts    Int?          // Maximum number of attempts allowed, null means unlimited
+  attemptSpacing Int?          // Minimum time between attempts in minutes, null means no spacing required
 }
 
 model ExamAnswer {
@@ -73,23 +86,27 @@ model ExamAnswer {
   isCorrect    Boolean
   submittedAt  DateTime @default(now())
   userId       Int // Add the userId field here
+  attemptId    Int? // Add relation to ExamAttempt
   user         User     @relation(fields: [userId], references: [id]) // Add relation to User model
   exam         Exam     @relation(fields: [examId], references: [id])
   question     Question @relation(fields: [questionId], references: [id])
+  attempt      ExamAttempt? @relation(fields: [attemptId], references: [id], onDelete: SetNull)
   @@unique([examId, userId, questionId])  // Composite unique key
 }
 
 model Score {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  examId    Int
-  score     Int
-  total     Int
-  percentage Float
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  examId      Int
+  score       Int
+  total       Int
+  percentage  Float
   submittedAt DateTime @default(now())
+  attemptId   Int?     // Add relation to ExamAttempt
   
-  user      User     @relation(fields: [userId], references: [id])
-  exam      Exam     @relation(fields: [examId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+  exam        Exam     @relation(fields: [examId], references: [id])
+  attempt     ExamAttempt? @relation(fields: [attemptId], references: [id], onDelete: SetNull)
   
   @@unique([userId, examId])
 }
@@ -304,6 +321,52 @@ model SystemSettings {
   description   String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+// Now add a new model to track attempts
+model ExamAttempt {
+  id           Int      @id @default(autoincrement())
+  examId       Int
+  userId       Int
+  attemptNumber Int      // Which attempt this is (1, 2, 3, etc.)
+  startedAt    DateTime @default(now())
+  completedAt  DateTime?
+  timeSpent    Int?      // Time spent in seconds
+  isCompleted  Boolean  @default(false)
+  exam         Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers      ExamAnswer[] // Add relation to ExamAnswer
+  scores       Score[]      // Add relation to Score
+  
+  // Add records relation
+  records      AttemptRecord[] // New relation to historical records
+  
+  @@unique([examId, userId, attemptNumber])
+}
+
+// New model for storing historical records of attempts
+model AttemptRecord {
+  id            Int      @id @default(autoincrement())
+  attemptId     Int      // Reference to the original attempt
+  userId        Int
+  examId        Int
+  attemptNumber Int
+  score         Int
+  total         Int
+  percentage    Float
+  answersData   Json     // Store answers as JSON including question data, user answers, and correctness
+  timeSpent     Int?     // Time spent in seconds
+  startedAt     DateTime
+  completedAt   DateTime
+  createdAt     DateTime @default(now())
+  
+  // Relations
+  attempt       ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exam          Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, examId])
+  @@index([attemptId])
 }
 
 

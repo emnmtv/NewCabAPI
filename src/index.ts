@@ -6,10 +6,10 @@ import cors from "cors";
 import { prisma } from './utils/authUtils'; // Import prisma client
 import path from 'path';
 import { initGameSocket } from './sockets/gameSocket';
-import documentRoutes from './routes/documentRoutes';
+
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3300;  // Ensuring it's a number
+const PORT = Number(process.env.PORT) || 3400;  // Ensuring it's a number
 
 // Create HTTP server
 const server = createServer(app);
@@ -38,7 +38,9 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 app.use('/auth', authRouter);
-
+app.get('/about', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 // Update the static file serving to include the full server URL
 app.use('/uploads', (req, res, next) => {
   // Set appropriate headers for images
@@ -461,8 +463,7 @@ io.on('connection', (socket: Socket) => {
 // Find where you initialize Socket.IO and add this line after it
 initGameSocket(io);
 
-// Add the document routes
-app.use('/api', documentRoutes);
+
 
 // Start the server
 server.listen(PORT, '0.0.0.0', () => {

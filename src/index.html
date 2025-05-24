@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NCNHS Assessment Portal - Presentation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(-45deg, #667eea, #764ba2, #f093fb, #f5576c);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .presentation-container {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .slide {
+            position: absolute;
+            width: 90%;
+            max-width: 1200px;
+            text-align: center;
+            opacity: 0;
+            transform: translateY(100px);
+            transition: all 0.8s ease-in-out;
+            color: white;
+            padding: 2rem;
+        }
+
+        .slide.active {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .slide.prev {
+            opacity: 0;
+            transform: translateY(-100px);
+        }
+
+        h1 {
+            font-size: 3.5rem;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            animation: slideInDown 1s ease-out;
+        }
+
+        h2 {
+            font-size: 2.5rem;
+            margin-bottom: 1.5rem;
+            color: #ffd700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        h3 {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            color: #87ceeb;
+        }
+
+        p {
+            font-size: 1.3rem;
+            line-height: 1.6;
+            margin-bottom: 1rem;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+        }
+
+        .problem-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+
+        .problem-item {
+            background: rgba(255,255,255,0.1);
+            padding: 1.5rem;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            transform: scale(0);
+            animation: popIn 0.6s ease-out forwards;
+        }
+
+        .problem-item:nth-child(1) { animation-delay: 0.2s; }
+        .problem-item:nth-child(2) { animation-delay: 0.4s; }
+        .problem-item:nth-child(3) { animation-delay: 0.6s; }
+        .problem-item:nth-child(4) { animation-delay: 0.8s; }
+        .problem-item:nth-child(5) { animation-delay: 1.0s; }
+
+        .feature-showcase {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+
+        .feature-card {
+            background: rgba(255,255,255,0.15);
+            padding: 2rem;
+            border-radius: 20px;
+            backdrop-filter: blur(15px);
+            border: 2px solid rgba(255,255,255,0.3);
+            transform: rotateY(90deg);
+            animation: flipIn 0.8s ease-out forwards;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .feature-card:nth-child(1) { animation-delay: 0.3s; }
+        .feature-card:nth-child(2) { animation-delay: 0.6s; }
+        .feature-card:nth-child(3) { animation-delay: 0.9s; }
+
+        .benefits-list {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+
+        .benefit-item {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 1rem 2rem;
+            border-radius: 25px;
+            font-weight: bold;
+            transform: translateX(-100px);
+            opacity: 0;
+            animation: slideInLeft 0.6s ease-out forwards;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        .benefit-item:nth-child(1) { animation-delay: 0.2s; }
+        .benefit-item:nth-child(2) { animation-delay: 0.4s; }
+        .benefit-item:nth-child(3) { animation-delay: 0.6s; }
+        .benefit-item:nth-child(4) { animation-delay: 0.8s; }
+        .benefit-item:nth-child(5) { animation-delay: 1.0s; }
+
+        .tech-highlights {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            margin: 2rem 0;
+        }
+
+        .tech-item {
+            background: rgba(255,255,255,0.2);
+            padding: 1.5rem;
+            border-radius: 15px;
+            margin: 0.5rem;
+            transform: scale(0) rotate(180deg);
+            animation: spinIn 0.8s ease-out forwards;
+            backdrop-filter: blur(10px);
+        }
+
+        .tech-item:nth-child(1) { animation-delay: 0.1s; }
+        .tech-item:nth-child(2) { animation-delay: 0.3s; }
+        .tech-item:nth-child(3) { animation-delay: 0.5s; }
+        .tech-item:nth-child(4) { animation-delay: 0.7s; }
+        .tech-item:nth-child(5) { animation-delay: 0.9s; }
+
+        .cta-button {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 1.5rem 3rem;
+            border: none;
+            border-radius: 50px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            transform: scale(0);
+            animation: bounceIn 1s ease-out forwards;
+            animation-delay: 0.5s;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            margin: 2rem;
+        }
+
+        .cta-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+        }
+
+        .navigation {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 1rem;
+            z-index: 100;
+        }
+
+        .nav-btn {
+            background: rgba(255,255,255,0.3);
+            border: 2px solid rgba(255,255,255,0.5);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 25px;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            font-weight: bold;
+        }
+
+        .nav-btn:hover, .nav-btn.active {
+            background: rgba(255,255,255,0.6);
+            color: #333;
+        }
+
+        .progress-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #f093fb, #f5576c);
+            transition: width 0.3s ease;
+            z-index: 100;
+        }
+
+        @keyframes slideInDown {
+            from { transform: translateY(-100px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        @keyframes popIn {
+            from { transform: scale(0); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes flipIn {
+            from { transform: rotateY(90deg); opacity: 0; }
+            to { transform: rotateY(0); opacity: 1; }
+        }
+
+        @keyframes slideInLeft {
+            from { transform: translateX(-100px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes spinIn {
+            from { transform: scale(0) rotate(180deg); opacity: 0; }
+            to { transform: scale(1) rotate(0); opacity: 1; }
+        }
+
+        @keyframes bounceIn {
+            0% { transform: scale(0); opacity: 0; }
+            50% { transform: scale(1.2); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .floating-icons {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .floating-icon {
+            position: absolute;
+            font-size: 2rem;
+            opacity: 0.1;
+            animation: float 6s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-20px) rotate(180deg); }
+        }
+
+        @media (max-width: 768px) {
+            h1 { font-size: 2.5rem; }
+            h2 { font-size: 2rem; }
+            h3 { font-size: 1.5rem; }
+            p { font-size: 1.1rem; }
+            .problem-grid { grid-template-columns: 1fr; }
+            .feature-showcase { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="progress-bar" id="progressBar"></div>
+    
+    <div class="floating-icons" id="floatingIcons"></div>
+
+    <div class="presentation-container">
+        <!-- Slide 1: Opening Hook -->
+        <div class="slide active" id="slide1">
+            <h1>🎓 NCNHS Assessment Portal</h1>
+            <h2>Where Education Meets Innovation</h2>
+            <p style="font-size: 1.5rem; margin-top: 2rem;">Transforming traditional paper-based assessments into a seamless digital experience</p>
+        </div>
+
+        <!-- Slide 2: Problem Statement -->
+        <div class="slide" id="slide2">
+            <h2>The Challenge We Face</h2>
+            <div class="problem-grid">
+                <div class="problem-item">
+                    <h3>📄 Paper-Based Chaos</h3>
+                    <p>Endless stacks of exams consuming valuable time</p>
+                </div>
+                <div class="problem-item">
+                    <h3>✏️ Manual Grading</h3>
+                    <p>Hours spent marking papers instead of teaching</p>
+                </div>
+                <div class="problem-item">
+                    <h3>📊 No Progress Tracking</h3>
+                    <p>Difficulty monitoring student performance</p>
+                </div>
+                <div class="problem-item">
+                    <h3>🚫 Limited Accessibility</h3>
+                    <p>Barriers for diverse learning needs</p>
+                </div>
+                <div class="problem-item">
+                    <h3>⏰ Time Consuming</h3>
+                    <p>Administrative tasks overwhelming educators</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 3: Solution Showcase -->
+        <div class="slide" id="slide3">
+            <h2>The NCNHS Solution</h2>
+            <div class="feature-showcase">
+                <div class="feature-card">
+                    <h3>🧠 Smart Exam Creation</h3>
+                    <p>Multiple question types, AI-powered generation, and real-time editing capabilities</p>
+                </div>
+                <div class="feature-card">
+                    <h3>📋 Task Management</h3>
+                    <p>File attachments, deadline tracking, and streamlined submission systems</p>
+                </div>
+                <div class="feature-card">
+                    <h3>⚡ Automated Grading</h3>
+                    <p>Instant results, detailed analytics, and comprehensive performance tracking</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 4: Teacher Benefits -->
+        <div class="slide" id="slide4">
+            <h2>Benefits for Educators</h2>
+            <div class="benefits-list">
+                <div class="benefit-item">⏱️ Save Hours Weekly</div>
+                <div class="benefit-item">📈 Advanced Analytics</div>
+                <div class="benefit-item">🎯 Better Engagement</div>
+                <div class="benefit-item">🔧 Flexible Assessments</div>
+                <div class="benefit-item">📱 Mobile Ready</div>
+            </div>
+            <p style="margin-top: 2rem; font-size: 1.4rem;">Focus on what matters most - teaching and inspiring students</p>
+        </div>
+
+        <!-- Slide 5: Student Benefits -->
+        <div class="slide" id="slide5">
+            <h2>Benefits for Students</h2>
+            <div class="benefits-list">
+                <div class="benefit-item">🔓 Easy Access</div>
+                <div class="benefit-item">⚡ Instant Feedback</div>
+                <div class="benefit-item">📊 Progress Tracking</div>
+                <div class="benefit-item">📱 Mobile Friendly</div>
+                <div class="benefit-item">🔒 Secure Submissions</div>
+            </div>
+            <p style="margin-top: 2rem; font-size: 1.4rem;">Empowering students with modern tools for academic success</p>
+        </div>
+
+        <!-- Slide 6: Technical Highlights -->
+        <div class="slide" id="slide6">
+            <h2>Built with Modern Technology</h2>
+            <div class="tech-highlights">
+                <div class="tech-item">
+                    <h3>Vue.js</h3>
+                    <p>Dynamic Frontend</p>
+                </div>
+                <div class="tech-item">
+                    <h3>🔐 Secure Auth</h3>
+                    <p>Protected Access</p>
+                </div>
+                <div class="tech-item">
+                    <h3>⚡ Real-time</h3>
+                    <p>Live Updates</p>
+                </div>
+                <div class="tech-item">
+                    <h3>📱 Cross-platform</h3>
+                    <p>Any Device</p>
+                </div>
+                <div class="tech-item">
+                    <h3>☁️ Cloud Storage</h3>
+                    <p>Always Available</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 7: Call to Action -->
+        <div class="slide" id="slide7">
+            <h2>Ready to Transform Education?</h2>
+            <p style="font-size: 1.6rem; margin: 2rem 0;">Join the digital revolution in assessment and unlock your teaching potential</p>
+            <button class="cta-button" onclick="showContact()">Get Started Today</button>
+            <div style="margin-top: 2rem;">
+                <p>📧 Contact: info@ncnhs-portal.edu</p>
+                <p>🌐 Implementation support available</p>
+                <p>🚀 Transform your classroom experience</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="navigation">
+        <button class="nav-btn active" onclick="goToSlide(1)">1</button>
+        <button class="nav-btn" onclick="goToSlide(2)">2</button>
+        <button class="nav-btn" onclick="goToSlide(3)">3</button>
+        <button class="nav-btn" onclick="goToSlide(4)">4</button>
+        <button class="nav-btn" onclick="goToSlide(5)">5</button>
+        <button class="nav-btn" onclick="goToSlide(6)">6</button>
+        <button class="nav-btn" onclick="goToSlide(7)">7</button>
+        <button class="nav-btn" onclick="autoPlay()" id="playBtn">▶️ Auto</button>
+    </div>
+
+    <script>
+        let currentSlide = 1;
+        let autoPlayInterval;
+        let isAutoPlaying = false;
+
+        // Create floating icons
+        function createFloatingIcons() {
+            const icons = ['📚', '💻', '🎓', '📊', '⚡', '🔬', '📝', '🌟'];
+            const container = document.getElementById('floatingIcons');
+            
+            for (let i = 0; i < 20; i++) {
+                const icon = document.createElement('div');
+                icon.className = 'floating-icon';
+                icon.textContent = icons[Math.floor(Math.random() * icons.length)];
+                icon.style.left = Math.random() * 100 + '%';
+                icon.style.top = Math.random() * 100 + '%';
+                icon.style.animationDelay = Math.random() * 6 + 's';
+                icon.style.animationDuration = (3 + Math.random() * 6) + 's';
+                container.appendChild(icon);
+            }
+        }
+
+        function goToSlide(slideNumber) {
+            // Remove active class from current slide
+            document.getElementById(`slide${currentSlide}`).classList.remove('active');
+            document.querySelector('.nav-btn.active').classList.remove('active');
+            
+            // Add prev class to current slide for exit animation
+            document.getElementById(`slide${currentSlide}`).classList.add('prev');
+            
+            // Set new current slide
+            currentSlide = slideNumber;
+            
+            // Activate new slide after a short delay
+            setTimeout(() => {
+                document.querySelectorAll('.slide').forEach(slide => {
+                    slide.classList.remove('active', 'prev');
+                });
+                
+                document.getElementById(`slide${currentSlide}`).classList.add('active');
+                document.querySelectorAll('.nav-btn')[currentSlide - 1].classList.add('active');
+                
+                // Update progress bar
+                updateProgressBar();
+            }, 200);
+        }
+
+        function nextSlide() {
+            const next = currentSlide < 7 ? currentSlide + 1 : 1;
+            goToSlide(next);
+        }
+
+        function autoPlay() {
+            const playBtn = document.getElementById('playBtn');
+            
+            if (isAutoPlaying) {
+                clearInterval(autoPlayInterval);
+                playBtn.textContent = '▶️ Auto';
+                isAutoPlaying = false;
+            } else {
+                autoPlayInterval = setInterval(nextSlide, 4000);
+                playBtn.textContent = '⏸️ Pause';
+                isAutoPlaying = true;
+            }
+        }
+
+        function updateProgressBar() {
+            const progress = (currentSlide / 7) * 100;
+            document.getElementById('progressBar').style.width = progress + '%';
+        }
+
+        function showContact() {
+            alert('🎉 Welcome to NCNHS Assessment Portal!\n\n📧 Email: emnmtv29@gmail.com\n📞 Phone: (555) 123-4567\n🌐 Website: www.ncnhs-portal.edu\n\nOur team is ready to help transform your educational experience!');
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowRight' || e.key === ' ') {
+                e.preventDefault();
+                nextSlide();
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                const prev = currentSlide > 1 ? currentSlide - 1 : 7;
+                goToSlide(prev);
+            } else if (e.key === 'Escape') {
+                if (isAutoPlaying) autoPlay();
+            }
+        });
+
+        // Initialize
+        createFloatingIcons();
+        updateProgressBar();
+
+        // Auto-start presentation after 3 seconds
+        setTimeout(() => {
+            if (!isAutoPlaying) {
+                autoPlay();
+            }
+        }, 3000);
+    </script>
+</body>
+</html>

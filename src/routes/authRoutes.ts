@@ -84,7 +84,12 @@ import {
     handleInitializeComponentSettings,
     handleGetProfileEditPermissions,
     handleUpdateProfileEditPermissions,
-    handleUpdateStudentLRN
+    handleUpdateStudentLRN,
+    handleCreateExamAttempt,
+    handleCompleteExamAttempt,
+    handleGetUserExamAttempts,
+    handleCheckExamEligibility,
+    handleRestoreAttemptScore
 } from '../controllers/authController';
 import { authenticateToken } from '../middleware/authMiddleware';
 import { upload } from '../middleware/fileMiddleware';
@@ -247,5 +252,14 @@ authRouter.post('/component-settings/initialize', authenticateToken, handleIniti
 // Add these new routes for profile edit permissions
 authRouter.get('/profile-edit-permissions', authenticateToken, handleGetProfileEditPermissions);
 authRouter.put('/profile-edit-permissions', authenticateToken, handleUpdateProfileEditPermissions);
+
+// Add these routes for exam attempts and eligibility
+authRouter.post('/exam/:examId/attempt', authenticateToken, handleCreateExamAttempt);
+authRouter.put('/exam-attempt/:attemptId/complete', authenticateToken, handleCompleteExamAttempt);
+authRouter.get('/exam/:examId/attempts', authenticateToken, handleGetUserExamAttempts);
+authRouter.get('/exam/:testCode/eligibility', authenticateToken, handleCheckExamEligibility);
+
+// New route for restoring attempt scores
+authRouter.post('/attempt-record/:recordId/restore', authenticateToken, handleRestoreAttemptScore);
 
 export { authRouter };

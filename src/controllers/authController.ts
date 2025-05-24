@@ -57,7 +57,13 @@ import { fetchExamQuestions,answerExam,
   initializeComponentSettings,
   getProfileEditPermissions,
   updateProfileEditPermissions,
-  updateStudentLRN
+  updateStudentLRN,
+  createExamAttempt,
+  completeExamAttempt,
+  getUserExamAttempts,
+  checkExamEligibility,
+  restoreAttemptScore,
+
 } from '../utils/authUtils';
 import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
@@ -67,7 +73,7 @@ import path from 'path';
 const prisma = new PrismaClient();
 
 // Register a new student
-const handleRegisterStudent = async (req: AuthRequest, res: Response) => {
+export const handleRegisterStudent = async (req: AuthRequest, res: Response) => {
   const { email, password, firstName, lastName, address, lrn, gradeLevel, section } = req.body;
   console.log('Received registration request for student:', { email, firstName, lastName });
 
@@ -83,7 +89,7 @@ const handleRegisterStudent = async (req: AuthRequest, res: Response) => {
 };
 
 // Register a new teacher
-const handleRegisterTeacher = async (req: AuthRequest, res: Response) => {
+export const handleRegisterTeacher = async (req: AuthRequest, res: Response) => {
   const { email, password, firstName, lastName, address, domain, department } = req.body;
   try {
     const user = await registerTeacher(email, password, firstName, lastName, address, domain, department);
@@ -94,7 +100,7 @@ const handleRegisterTeacher = async (req: AuthRequest, res: Response) => {
 };
 
 // Register a new admin
-const handleRegisterAdmin = async (req: AuthRequest, res: Response) => {
+export const handleRegisterAdmin = async (req: AuthRequest, res: Response) => {
   const { email, password, firstName, lastName, address, } = req.body;
   try {
     const user = await registerAdmin(email, password, firstName, lastName, address);
@@ -105,7 +111,7 @@ const handleRegisterAdmin = async (req: AuthRequest, res: Response) => {
 };
 
 // Login a user
-const handleLogin = async (req: AuthRequest, res: Response) => {
+export const handleLogin = async (req: AuthRequest, res: Response) => {
   const { email, lrn, password } = req.body;
   try {
     // Ensure LRN is treated as a string
@@ -121,7 +127,7 @@ const handleLogin = async (req: AuthRequest, res: Response) => {
 };
 
 // Update a user's profile
-const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
+export const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
   const { firstName, lastName, email, address, gradeLevel, section, domain, department, password, profilePicture, lrn } = req.body;
   
@@ -207,8 +213,19 @@ const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
 };
 
 // Create a new exam
-const handleCreateExam = async (req: AuthRequest, res: Response) => {
-  const { testCode, classCode, examTitle, questions, isDraft } = req.body;
+export const handleCreateExam = async (req: AuthRequest, res: Response) => {
+  const { 
+    testCode, 
+    classCode, 
+    examTitle, 
+    questions, 
+    isDraft,
+    durationMinutes,
+    startDateTime,
+    endDateTime,
+    maxAttempts,
+    attemptSpacing
+  } = req.body;
   const userId = req.user!.userId;
   
   try {
@@ -218,7 +235,12 @@ const handleCreateExam = async (req: AuthRequest, res: Response) => {
       examTitle, 
       questions, 
       userId,
-      isDraft
+      isDraft,
+      durationMinutes,
+      startDateTime ? new Date(startDateTime) : undefined,
+      endDateTime ? new Date(endDateTime) : undefined,
+      maxAttempts,
+      attemptSpacing
     );
     res.status(201).json({ 
       message: isDraft ? 'Exam saved as draft.' : 'Exam created successfully.',
@@ -229,25 +251,29 @@ const handleCreateExam = async (req: AuthRequest, res: Response) => {
   }
 };
 
-interface AnswerExamRequest {
+export interface AnswerExamRequest {
   testCode: string; // Now using testCode instead of examId
   userId: number;
   answers: Array<{ questionId: number; userAnswer: string }>;
+  attemptId: number;
 }
 
 // Answer exam
-const handleAnswerExam = async (req: AuthRequest, res: Response) => {
-  const body: AnswerExamRequest = req.body;
+export const handleAnswerExam = async (req: AuthRequest, res: Response) => {
+  const body = req.body;
   const userId = req.user!.userId;
   console.log("Received answer exam request");
-  const { testCode, answers } = body;
+  const { testCode, answers, attemptId } = body;
 
   try {
-    const result = await answerExam(testCode, userId, answers);
+    const result = await answerExam(testCode, userId, answers, attemptId);
     res.status(200).json({
       message: 'Answers submitted successfully',
       answeredQuestions: result.answeredQuestions,
-      score: result.score
+      score: result.score,
+      attemptId: result.attemptId,
+      attemptCompleted: result.attemptCompleted,
+      attempt: result.attempt
     });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
@@ -258,7 +284,7 @@ interface FetchExamQuestionsRequest {
   testCode: string; // Accepting testCode to identify the exam
 }
 
-const handleFetchExamQuestions = async (req: AuthRequest, res: Response) => {
+export const handleFetchExamQuestions = async (req: AuthRequest, res: Response) => {
   const body: FetchExamQuestionsRequest = req.body;
   console.log("Received fetch exam questions request:", body);
   const { testCode } = body;
@@ -280,7 +306,7 @@ const handleFetchExamQuestions = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleStartExam = async (req: AuthRequest, res: Response) => {
+export const handleStartExam = async (req: AuthRequest, res: Response) => {
   const { testCode } = req.body;
 
   try {
@@ -292,7 +318,7 @@ const handleStartExam = async (req: AuthRequest, res: Response) => {
 };
 
 // Handler function for stopping the exam
-const handleStopExam = async (req: AuthRequest, res: Response) => {
+export const handleStopExam = async (req: AuthRequest, res: Response) => {
   const { testCode } = req.body;
 
   try {
@@ -303,7 +329,7 @@ const handleStopExam = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleGetUserProfile = async (req: AuthRequest, res: Response) => {
+export const handleGetUserProfile = async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
   try {
     const userProfile = await fetchUserProfile(userId);
@@ -316,7 +342,7 @@ const handleGetUserProfile = async (req: AuthRequest, res: Response) => {
 /**
  * Handler to fetch all students
  */
-const handleGetStudents = async (_req: AuthRequest, res: Response) => {
+export const handleGetStudents = async (_req: AuthRequest, res: Response) => {
   try {
     const students = await fetchStudentList();
     res.status(200).json({ students });
@@ -328,7 +354,7 @@ const handleGetStudents = async (_req: AuthRequest, res: Response) => {
 /**
  * Handler to fetch all teachers
  */
-const handleGetTeachers = async (_req: AuthRequest, res: Response) => {
+export const handleGetTeachers = async (_req: AuthRequest, res: Response) => {
   try {
     const teachers = await fetchTeacherList();
     res.status(200).json({ teachers });
@@ -340,7 +366,7 @@ const handleGetTeachers = async (_req: AuthRequest, res: Response) => {
 /**
  * Handler to fetch all admins
  */
-const handleGetAdmins = async (_req: AuthRequest, res: Response) => {
+export const handleGetAdmins = async (_req: AuthRequest, res: Response) => {
   try {
     const admins = await fetchAdminList();
     res.status(200).json({ admins });
@@ -353,13 +379,18 @@ const handleGetAdmins = async (_req: AuthRequest, res: Response) => {
  * Handler to fetch student scores
  * Optional query params: studentId, examId
  */
-const handleGetStudentScores = async (req: AuthRequest, res: Response) => {
+export const handleGetStudentScores = async (req: AuthRequest, res: Response) => {
   try {
     const studentId = req.query.studentId ? parseInt(req.query.studentId as string) : undefined;
     const examId = req.query.examId ? parseInt(req.query.examId as string) : undefined;
     
-    const scores = await fetchStudentScores(studentId, examId);
-    res.status(200).json({ scores });
+    const { scores, attemptRecords } = await fetchStudentScores(studentId, examId);
+    
+    res.status(200).json({ 
+      scores,
+      attemptRecords,
+      hasAttemptRecords: attemptRecords.length > 0
+    });
   } catch (error) {
     console.error('Error fetching student scores:', error);
     res.status(500).json({ error: (error as Error).message });
@@ -369,7 +400,7 @@ const handleGetStudentScores = async (req: AuthRequest, res: Response) => {
 /**
  * Handler to get exams created by a teacher
  */
-const handleGetTeacherExams = async (req: AuthRequest, res: Response) => {
+export const handleGetTeacherExams = async (req: AuthRequest, res: Response) => {
   const teacherId = req.user!.userId;
   
   try {
@@ -418,7 +449,7 @@ const handleGetTeacherExams = async (req: AuthRequest, res: Response) => {
 /**
  * Handler to update an exam
  */
-const handleUpdateExam = async (req: AuthRequest, res: Response) => {
+export const handleUpdateExam = async (req: AuthRequest, res: Response) => {
   const teacherId = req.user!.userId;
   const examId = parseInt(req.params.examId);
   const updateData = req.body;
@@ -438,7 +469,7 @@ const handleUpdateExam = async (req: AuthRequest, res: Response) => {
 /**
  * Handler to delete an exam
  */
-const handleDeleteExam = async (req: AuthRequest, res: Response) => {
+export const handleDeleteExam = async (req: AuthRequest, res: Response) => {
   const teacherId = req.user!.userId;
   const examId = parseInt(req.params.examId);
   
@@ -463,7 +494,7 @@ export const handleGetExamAnalysis = async (req: AuthRequest, res: Response) => 
 };
 
 // Create a new survey
-const handleCreateSurvey = async (req: AuthRequest, res: Response) => {
+export const handleCreateSurvey = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
     const { title, description, questions } = req.body;
@@ -480,7 +511,7 @@ const handleCreateSurvey = async (req: AuthRequest, res: Response) => {
 };
 
 // Fetch survey by code
-const handleFetchSurvey = async (req: AuthRequest, res: Response) => {
+export const handleFetchSurvey = async (req: AuthRequest, res: Response) => {
   try {
     const { code } = req.params;
     const survey = await fetchSurveyByCode(code);
@@ -491,7 +522,7 @@ const handleFetchSurvey = async (req: AuthRequest, res: Response) => {
 };
 
 // Submit survey response
-const handleSubmitSurvey = async (req: AuthRequest, res: Response) => {
+export const handleSubmitSurvey = async (req: AuthRequest, res: Response) => {
   try {
     const { code } = req.params;
     const { respondent, answers } = req.body;
@@ -512,7 +543,7 @@ const handleSubmitSurvey = async (req: AuthRequest, res: Response) => {
 };
 
 // Fetch survey results
-const handleGetSurveyResults = async (req: AuthRequest, res: Response) => {
+export const handleGetSurveyResults = async (req: AuthRequest, res: Response) => {
   try {
     const { code } = req.params;
     const results = await fetchSurveyResults(code);
@@ -523,7 +554,7 @@ const handleGetSurveyResults = async (req: AuthRequest, res: Response) => {
 };
 
 // Add new handler to get user's surveys
-const handleGetUserSurveys = async (req: AuthRequest, res: Response) => {
+export const handleGetUserSurveys = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
     const surveys = await fetchUserSurveys(userId);
@@ -533,7 +564,7 @@ const handleGetUserSurveys = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleCreateGradeSection = async (req: AuthRequest, res: Response) => {
+export const handleCreateGradeSection = async (req: AuthRequest, res: Response) => {
   const { grade, section } = req.body;
   
   try {
@@ -544,7 +575,7 @@ const handleCreateGradeSection = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleGetAllGradeSections = async (_req: AuthRequest, res: Response) => {
+export const handleGetAllGradeSections = async (_req: AuthRequest, res: Response) => {
   try {
     const gradeSections = await getAllGradeSections();
     res.status(200).json({ gradeSections });
@@ -553,7 +584,7 @@ const handleGetAllGradeSections = async (_req: AuthRequest, res: Response) => {
   }
 };
 
-const handleUpdateGradeSection = async (req: AuthRequest, res: Response) => {
+export const handleUpdateGradeSection = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const { grade, section } = req.body;
   
@@ -565,7 +596,7 @@ const handleUpdateGradeSection = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleDeleteGradeSection = async (req: AuthRequest, res: Response) => {
+export const handleDeleteGradeSection = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   
   try {
@@ -576,7 +607,7 @@ const handleDeleteGradeSection = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleUpdateUser = async (req: AuthRequest, res: Response) => {
+export const handleUpdateUser = async (req: AuthRequest, res: Response) => {
   const { userId } = req.params;
   const updateData = req.body;
 
@@ -593,7 +624,7 @@ const handleUpdateUser = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleDeleteUser = async (req: AuthRequest, res: Response) => {
+export const handleDeleteUser = async (req: AuthRequest, res: Response) => {
   const { userId } = req.params;
 
   try {
@@ -604,7 +635,7 @@ const handleDeleteUser = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleGetUserDetails = async (req: AuthRequest, res: Response) => {
+export const handleGetUserDetails = async (req: AuthRequest, res: Response) => {
   const { userId } = req.params;
 
   try {
@@ -636,7 +667,7 @@ const handleGetUserDetails = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleSetExamAccess = async (req: AuthRequest, res: Response) => {
+export const handleSetExamAccess = async (req: AuthRequest, res: Response) => {
   const { examId } = req.params;
   const { gradeAccess } = req.body;
 
@@ -648,7 +679,7 @@ const handleSetExamAccess = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleGetExamAccess = async (req: AuthRequest, res: Response) => {
+export const handleGetExamAccess = async (req: AuthRequest, res: Response) => {
   const { examId } = req.params;
 
   try {
@@ -659,7 +690,7 @@ const handleGetExamAccess = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleCheckExamAccess = async (req: AuthRequest, res: Response) => {
+export const handleCheckExamAccess = async (req: AuthRequest, res: Response) => {
   const { examId } = req.params;
   const { grade, section } = req.query;
 
@@ -675,7 +706,7 @@ const handleCheckExamAccess = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleGetAllExams = async (_req: AuthRequest, res: Response) => {
+export const handleGetAllExams = async (_req: AuthRequest, res: Response) => {
   try {
     const exams = await prisma.exam.findMany({
       include: {
@@ -695,7 +726,7 @@ const handleGetAllExams = async (_req: AuthRequest, res: Response) => {
   }
 };
 
-const handleImageUpload = async (req: AuthRequest, res: Response): Promise<void> => {
+export const handleImageUpload = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { image } = req.body;
     
@@ -739,7 +770,7 @@ const handleImageUpload = async (req: AuthRequest, res: Response): Promise<void>
   }
 };
 
-const handleGetAvailableSections = async (req: AuthRequest, res: Response) => {
+export const handleGetAvailableSections = async (req: AuthRequest, res: Response) => {
   const { grade } = req.query;
   
   try {
@@ -770,7 +801,7 @@ const handleGetAvailableSections = async (req: AuthRequest, res: Response) => {
 /**
  * Handler to fetch a student's exam history with detailed information
  */
-const handleGetStudentExamHistory = async (req: AuthRequest, res: Response) => {
+export const handleGetStudentExamHistory = async (req: AuthRequest, res: Response) => {
   try {
     const studentId = req.user!.userId;
     
@@ -787,7 +818,7 @@ const handleGetStudentExamHistory = async (req: AuthRequest, res: Response) => {
 };
 
 // Add this new handler for admin exam monitoring
-const handleGetAllExamsForAdmin = async (_req: AuthRequest, res: Response) => {
+export const handleGetAllExamsForAdmin = async (_req: AuthRequest, res: Response) => {
   try {
     const exams = await fetchAllExamsForAdmin();
     res.status(200).json({ exams });
@@ -800,7 +831,7 @@ const handleGetAllExamsForAdmin = async (_req: AuthRequest, res: Response) => {
 /**
  * Handler to get Mean Percentage Score (MPS) for an exam
  */
-const handleGetExamMPS = async (req: AuthRequest, res: Response): Promise<void> => {
+export const handleGetExamMPS = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const examId = parseInt(req.params.examId);
     
@@ -832,7 +863,7 @@ const handleGetExamMPS = async (req: AuthRequest, res: Response): Promise<void> 
 };
 
 // Subject controllers
-const handleCreateSubject = async (req: AuthRequest, res: Response) => {
+export const handleCreateSubject = async (req: AuthRequest, res: Response) => {
   const { name, code, description } = req.body;
   
   try {
@@ -843,7 +874,7 @@ const handleCreateSubject = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleUpdateSubject = async (req: AuthRequest, res: Response) => {
+export const handleUpdateSubject = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const { name, code, description } = req.body;
   
@@ -855,7 +886,7 @@ const handleUpdateSubject = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleDeleteSubject = async (req: AuthRequest, res: Response) => {
+export const handleDeleteSubject = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   
   try {
@@ -866,7 +897,7 @@ const handleDeleteSubject = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleGetAllSubjects = async (_req: AuthRequest, res: Response) => {
+export const handleGetAllSubjects = async (_req: AuthRequest, res: Response) => {
   try {
     const subjects = await getAllSubjects();
     res.status(200).json({ subjects });
@@ -875,7 +906,7 @@ const handleGetAllSubjects = async (_req: AuthRequest, res: Response) => {
   }
 };
 
-const handleGetSubjectById = async (req: AuthRequest, res: Response) => {
+export const handleGetSubjectById = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   
   try {
@@ -890,7 +921,7 @@ const handleGetSubjectById = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleAssignTeacherToSubject = async (req: AuthRequest, res: Response) => {
+export const handleAssignTeacherToSubject = async (req: AuthRequest, res: Response) => {
   const { teacherId, subjectId } = req.body;
   
   try {
@@ -901,7 +932,7 @@ const handleAssignTeacherToSubject = async (req: AuthRequest, res: Response) => 
   }
 };
 
-const handleRemoveTeacherFromSubject = async (req: AuthRequest, res: Response) => {
+export const handleRemoveTeacherFromSubject = async (req: AuthRequest, res: Response) => {
   const { teacherId, subjectId } = req.params;
   
   try {
@@ -912,7 +943,7 @@ const handleRemoveTeacherFromSubject = async (req: AuthRequest, res: Response) =
   }
 };
 
-const handleAssignSubjectToSection = async (req: AuthRequest, res: Response) => {
+export const handleAssignSubjectToSection = async (req: AuthRequest, res: Response) => {
   const { grade, section, subjectId } = req.body;
   
   try {
@@ -923,7 +954,7 @@ const handleAssignSubjectToSection = async (req: AuthRequest, res: Response) => 
   }
 };
 
-const handleRemoveSubjectFromSection = async (req: AuthRequest, res: Response) => {
+export const handleRemoveSubjectFromSection = async (req: AuthRequest, res: Response) => {
   const { grade, section, subjectId } = req.params;
   
   try {
@@ -934,7 +965,7 @@ const handleRemoveSubjectFromSection = async (req: AuthRequest, res: Response) =
   }
 };
 
-const handleGetTeacherSubjects = async (req: AuthRequest, res: Response) => {
+export const handleGetTeacherSubjects = async (req: AuthRequest, res: Response) => {
   const { teacherId } = req.params;
   
   try {
@@ -945,7 +976,7 @@ const handleGetTeacherSubjects = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleGetSectionSubjects = async (req: AuthRequest, res: Response) => {
+export const handleGetSectionSubjects = async (req: AuthRequest, res: Response) => {
   const { grade, section } = req.params;
   
   try {
@@ -956,7 +987,7 @@ const handleGetSectionSubjects = async (req: AuthRequest, res: Response) => {
   }
 };
 
-const handleUpdateSubjectSchedule = async (req: AuthRequest, res: Response) => {
+export const handleUpdateSubjectSchedule = async (req: AuthRequest, res: Response) => {
   const { subjectId } = req.params;
   const { scheduleType, startTime, endTime, dayOfWeek, startDay, endDay, daysOfWeek: selectedDays } = req.body;
   
@@ -1003,7 +1034,7 @@ const handleUpdateSubjectSchedule = async (req: AuthRequest, res: Response) => {
 };
 
 // Add these new controller functions
-const handleGetTeacherAssignedSubjects = async (req: AuthRequest, res: Response) => {
+export const handleGetTeacherAssignedSubjects = async (req: AuthRequest, res: Response) => {
   try {
 
     const teacherId = req.user?.userId;
@@ -1043,7 +1074,7 @@ const handleGetTeacherAssignedSubjects = async (req: AuthRequest, res: Response)
 // //   }
 // };
 
-const handleGetStudentSubjects = async (req: AuthRequest, res: Response) => {
+export const handleGetStudentSubjects = async (req: AuthRequest, res: Response) => {
   try {
     const studentId = req.user?.userId;
     if (!studentId) {
@@ -1911,16 +1942,27 @@ export const handleDeleteFile = async (req: AuthRequest, res: Response) => {
 /**
  * Handler to get student's exam answers with details
  */
-const handleGetStudentExamAnswers = async (req: AuthRequest, res: Response) => {
+export const handleGetStudentExamAnswers = async (req: AuthRequest, res: Response) => {
   try {
     const { examId, studentId } = req.params;
+    const { attemptId } = req.query;
     
     const details = await getStudentExamAnswers(
       parseInt(examId),
-      parseInt(studentId)
+      parseInt(studentId),
+      attemptId ? parseInt(attemptId as string) : undefined
     );
     
-    res.status(200).json(details);
+    // Format the response to use standard field names
+    const response = {
+      ...details,
+      exam: details.examData,
+      student: details.studentData,
+      hasHistoricalRecord: !!details.attemptRecord,
+      attemptDetails: details.currentAttempt
+    };
+    
+    res.status(200).json(response);
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
   }
@@ -1929,7 +1971,7 @@ const handleGetStudentExamAnswers = async (req: AuthRequest, res: Response) => {
 /**
  * Handler to update a student's exam answer
  */
-const handleUpdateStudentExamAnswer = async (req: AuthRequest, res: Response) => {
+export const handleUpdateStudentExamAnswer = async (req: AuthRequest, res: Response) => {
   try {
     const { answerId } = req.params;
     const { isCorrect } = req.body;
@@ -1953,7 +1995,7 @@ const handleUpdateStudentExamAnswer = async (req: AuthRequest, res: Response) =>
 /**
  * Handler to manually update student's exam score
  */
-const handleUpdateStudentExamScore = async (req: AuthRequest, res: Response) => {
+export const handleUpdateStudentExamScore = async (req: AuthRequest, res: Response) => {
   try {
     const { examId, studentId } = req.params;
     const { score } = req.body;
@@ -1978,7 +2020,7 @@ const handleUpdateStudentExamScore = async (req: AuthRequest, res: Response) => 
 /**
  * Handler to create a new question bank item
  */
-const handleCreateQuestionBankItem = async (req: AuthRequest, res: Response) => {
+export const handleCreateQuestionBankItem = async (req: AuthRequest, res: Response) => {
   try {
     const teacherId = req.user!.userId;
     const questionData = req.body;
@@ -1997,7 +2039,7 @@ const handleCreateQuestionBankItem = async (req: AuthRequest, res: Response) => 
 /**
  * Handler to get question bank items with filters
  */
-const handleGetQuestionBankItems = async (req: AuthRequest, res: Response) => {
+export const handleGetQuestionBankItems = async (req: AuthRequest, res: Response) => {
   try {
     const filters = req.query;
     const questions = await getQuestionBankItems(filters);
@@ -2011,7 +2053,7 @@ const handleGetQuestionBankItems = async (req: AuthRequest, res: Response) => {
 /**
  * Handler to update a question bank item
  */
-const handleUpdateQuestionBankItem = async (req: AuthRequest, res: Response) => {
+export const handleUpdateQuestionBankItem = async (req: AuthRequest, res: Response) => {
   try {
     const teacherId = req.user!.userId;
     const { questionId } = req.params;
@@ -2035,7 +2077,7 @@ const handleUpdateQuestionBankItem = async (req: AuthRequest, res: Response) => 
 /**
  * Handler to delete a question bank item
  */
-const handleDeleteQuestionBankItem = async (req: AuthRequest, res: Response) => {
+export const handleDeleteQuestionBankItem = async (req: AuthRequest, res: Response) => {
   try {
     const teacherId = req.user!.userId;
     const { questionId } = req.params;
@@ -2051,7 +2093,7 @@ const handleDeleteQuestionBankItem = async (req: AuthRequest, res: Response) => 
 /**
  * Handler to create a new question bank folder
  */
-const handleCreateQuestionBankFolder = async (req: AuthRequest, res: Response) => {
+export const handleCreateQuestionBankFolder = async (req: AuthRequest, res: Response) => {
   try {
     const teacherId = req.user!.userId;
     const folderData = req.body;
@@ -2070,7 +2112,7 @@ const handleCreateQuestionBankFolder = async (req: AuthRequest, res: Response) =
 /**
  * Handler to get question bank folders
  */
-const handleGetQuestionBankFolders = async (req: AuthRequest, res: Response) => {
+export const handleGetQuestionBankFolders = async (req: AuthRequest, res: Response) => {
   try {
     const teacherId = req.user!.userId;
     const folders = await getQuestionBankFolders(teacherId);
@@ -2084,7 +2126,7 @@ const handleGetQuestionBankFolders = async (req: AuthRequest, res: Response) => 
 /**
  * Handler to update a question bank folder
  */
-const handleUpdateQuestionBankFolder = async (req: AuthRequest, res: Response) => {
+export const handleUpdateQuestionBankFolder = async (req: AuthRequest, res: Response) => {
   try {
     const teacherId = req.user!.userId;
     const { folderId } = req.params;
@@ -2108,7 +2150,7 @@ const handleUpdateQuestionBankFolder = async (req: AuthRequest, res: Response) =
 /**
  * Handler to delete a question bank folder
  */
-const handleDeleteQuestionBankFolder = async (req: AuthRequest, res: Response) => {
+export  const handleDeleteQuestionBankFolder = async (req: AuthRequest, res: Response) => {
   try {
     const teacherId = req.user!.userId;
     const { folderId } = req.params;
@@ -2246,60 +2288,176 @@ export const handleUpdateStudentLRN = async (req: AuthRequest, res: Response) =>
   }
 };
 
-export { handleRegisterAdmin, handleRegisterStudent, handleRegisterTeacher, handleLogin,  handleUpdateProfile,handleCreateExam,handleAnswerExam
-  ,handleFetchExamQuestions, handleStartExam,handleStopExam, handleGetUserProfile,
-  handleGetStudents,
-  handleGetTeachers,
-  handleGetAdmins,
-  handleGetStudentScores,
-  handleGetTeacherExams,
-  handleUpdateExam,
-  handleDeleteExam,
-  handleCreateSurvey,
-  handleFetchSurvey,
-  handleSubmitSurvey,
-  handleGetSurveyResults,
-  handleGetUserSurveys,
-  handleCreateGradeSection,
-  handleGetAllGradeSections,
-  handleUpdateGradeSection,
-  handleDeleteGradeSection,
-  handleUpdateUser,
-  handleDeleteUser,
-  handleGetUserDetails,
-  handleSetExamAccess,
-  handleGetExamAccess,
-  handleCheckExamAccess,
-  handleGetAllExams,
-  handleImageUpload,
-  handleGetAvailableSections,
-  handleGetStudentExamHistory,
-  handleGetAllExamsForAdmin,
-  handleGetExamMPS,
-  handleCreateSubject,
-  handleUpdateSubject,
-  handleDeleteSubject,
-  handleGetAllSubjects,
-  handleGetSubjectById,
-  handleAssignTeacherToSubject,
-  handleRemoveTeacherFromSubject,
-  handleAssignSubjectToSection,
-  handleRemoveSubjectFromSection,
-  handleGetTeacherSubjects,
-  handleGetSectionSubjects,
-  handleUpdateSubjectSchedule,
-  handleGetTeacherAssignedSubjects,
-  handleGetStudentSubjects,
-  handleGetStudentExamAnswers,
-  handleUpdateStudentExamAnswer,
-  handleUpdateStudentExamScore,
-  handleCreateQuestionBankItem,
-  handleGetQuestionBankItems,
-  handleUpdateQuestionBankItem,
-  handleDeleteQuestionBankItem,
-  handleCreateQuestionBankFolder,
-  handleGetQuestionBankFolders,
-  handleUpdateQuestionBankFolder,
-  handleDeleteQuestionBankFolder,
-
+/**
+ * Create a new exam attempt
+ */
+export const handleCreateExamAttempt = async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const examId = parseInt(req.params.examId);
+  
+  try {
+    // First check eligibility to ensure we're not exceeding maximum attempts
+    const exam = await prisma.exam.findUnique({
+      where: { id: examId },
+      select: { testCode: true }
+    });
+    
+    if (!exam) {
+      res.status(404).json({ error: 'Exam not found' });
+      return;
+    }
+    
+    const eligibility = await checkExamEligibility(exam.testCode, userId);
+    
+    if (!eligibility.eligible) {
+      res.status(400).json({ 
+        error: 'Cannot create new attempt',
+        reason: eligibility.message,
+        eligibility
+      });
+      return;
+    }
+    
+    const attempt = await createExamAttempt(examId, userId);
+    
+    res.status(201).json({ 
+      message: 'Exam attempt created successfully',
+      attempt,
+      attemptNumber: attempt.attemptNumber
+    });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
 };
+
+/**
+ * Complete an exam attempt
+ */
+export const handleCompleteExamAttempt = async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const attemptId = parseInt(req.params.attemptId);
+  
+  try {
+    // Complete the attempt
+    const attempt = await completeExamAttempt(attemptId, userId);
+    
+    if (attempt.isCompleted) {
+      // Get the latest score record for this attempt
+      const latestScore = await prisma.score.findFirst({
+        where: {
+          userId,
+          examId: attempt.examId,
+          attemptId
+        },
+        orderBy: {
+          submittedAt: 'desc'
+        }
+      });
+      
+      res.status(200).json({
+        message: 'Exam attempt completed successfully',
+        attempt,
+        timeSpent: attempt.timeSpent,
+        score: latestScore
+      });
+    } else {
+      res.status(200).json({ 
+        message: 'Exam attempt was already completed',
+        attempt
+      });
+    }
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Get user's attempts for an exam
+ */
+export const handleGetUserExamAttempts = async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const examId = parseInt(req.params.examId);
+  
+  try {
+    const attempts = await getUserExamAttempts(examId, userId);
+    
+    // Get the exam details
+    const exam = await prisma.exam.findUnique({
+      where: { id: examId },
+      select: {
+        testCode: true,
+        examTitle: true,
+        maxAttempts: true,
+        durationMinutes: true
+      }
+    });
+    
+    // Check for historical attempts in a type-safe way
+    const hasHistoricalAttempts = attempts.some(a => 'isHistorical' in a && a.isHistorical === true);
+    
+    res.status(200).json({ 
+      attempts,
+      exam,
+      totalAttempts: attempts.length,
+      maxAttempts: exam?.maxAttempts || null,
+      hasHistoricalAttempts
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Check if a user is eligible to take an exam
+ */
+export const handleCheckExamEligibility = async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const testCode = req.params.testCode;
+  
+  try {
+    const eligibility = await checkExamEligibility(testCode, userId);
+    
+    // If eligible, include additional info about attempts
+    if (eligibility.eligible) {
+      const completedAttempts = eligibility.attempts?.filter(a => a.isCompleted) || [];
+      const incompleteAttempt = eligibility.incompleteAttempt;
+      
+      res.status(200).json({
+        ...eligibility,
+        completedAttempts: completedAttempts.length,
+        hasIncompleteAttempt: !!incompleteAttempt,
+        canStartNewAttempt: eligibility.eligible && !incompleteAttempt,
+        totalAttempts: eligibility.totalAttempts || 0
+      });
+    } else {
+      res.status(200).json({
+        ...eligibility,
+        totalAttempts: eligibility.totalAttempts || 0
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+/**
+ * Handler to restore a historical attempt as the current score and exam answers
+ */
+export const handleRestoreAttemptScore = async (req: AuthRequest, res: Response) => {
+  try {
+    const teacherId = req.user!.userId;
+    const { recordId } = req.params;
+    
+    const result = await restoreAttemptScore(parseInt(recordId), teacherId);
+    
+    res.status(200).json({
+      message: result.message,
+      score: result.score,
+      answersRestored: result.answersRestored || 0
+    });
+  } catch (error) {
+    console.error('Error restoring attempt score:', error);
+    res.status(400).json({ error: (error as Error).message });
+  }
+};
+
